@@ -1499,3 +1499,22 @@ $ head -c 120 saved.vectorcraft
 2. 选完保存位置后，应用会再弹自己的「VectorCraft Options」（压缩/版本/预览/分画板/ICC/PDF 兼容）。
 3. 那个对话框里的 Version 输入框会**自动聚焦并拉起键盘**，把 OK 按钮盖住 —— 必须先 `input keyevent 4` 收起键盘，再点 OK。
    收键盘前后 OK 都是 `(1933,1479)`，但键盘在时点它会被输入法吞掉。
+
+## 2026-10-20：图标为什么会「没有图标」
+
+用 `aapt2 dump resources <apk> | grep -A1 ic_launcher_foreground` 审计了 14 个 APK，
+发现有两种结果：
+
+- `res/qx.png type=PNG` —— 用的是 `assets/app-icon/<app>-1024.png` 渲染出的原版图标
+- `res/Qr.xml type=XML` —— 用的是**生成的矢量占位图**（绿底白格纹之类）
+
+根因：`make-original-icons.py` 会把原图写成 `drawable/ic_launcher_foreground.png`，
+但 `drawable/` 里还留着模板时代的 `ic_launcher_foreground.xml`。**同名资源里 aapt2 用了 XML**，
+所以即使原图已经生成，打进 APK 的仍是旧占位图。
+
+修复：脚本在写完 PNG 后主动删除这两个残留 XML（`ic_launcher_foreground.xml`、
+`ic_launcher_monochrome.xml`），并重跑五个老应用 + GridCraft + ArtCraftLauncher。
+现在 14 个 APK 全部是 `type=PNG`。
+
+另外注意：`src/gridcraft` 的源码图标本来是对的，但 `out/` 里那个是 10-17 的旧包；
+**光看源码会以为没问题，必须看产物**。

@@ -97,6 +97,15 @@ def build(app_dir, app, res_dir):
         f'    <color name="ic_launcher_background">{hex_of(bg)}</color>\n</resources>\n')
 
     print(f"  ✅ {app}: {os.path.basename(src)} -> {res_dir}  (bg {hex_of(bg)})")
+    # A leftover vector placeholder shadows the bitmap we just wrote: aapt2 resolves
+    # drawable/ic_launcher_foreground.xml in preference to .png, so the launcher keeps drawing the
+    # generated grid instead of the app's real artwork. Drop the XML so the PNG wins.
+    for stale in ("ic_launcher_foreground.xml", "ic_launcher_monochrome.xml"):
+        f = os.path.join(res_dir, "drawable", stale)
+        if os.path.exists(f):
+            os.remove(f)
+            print(f"  removed stale {stale}")
+
     return True
 
 
