@@ -1421,3 +1421,28 @@ orange BUTTON  center=(2678,1697) 179x69     # New Document 的 Create
 ```
 
 工具：`~/find-button.py <png> orange|blue`。
+
+### 更正：`read`/`write` 字段并非所有应用都有（差点改坏构建）
+
+我先把补丁机械地打到 6 个同构应用上，随后检查 `crates/ui-egui/src/lib.rs` 才发现
+**cadcraft、wordcraft、gridcraft 的 `Services` 根本没有 `read`/`write` 字段** ——
+那样写会直接编译失败。三处已回退（`src/` 是 gitignore 的克隆，`git checkout` 无效，只能手工还原）。
+
+按实际字段分布重列：
+
+| 应用 | `Services` 有 read/write 字段 | 状态 |
+|---|---|---|
+| vectorcraft | 有 | ✅ 已设，**已重建**（APK 79.7 MB） |
+| deckcraft | 有 | ✅ 已设，待重建 |
+| designcraft | 有 | ✅ 已设，待重建 |
+| lightcraft | 有 | ✅ 原本就已设置 |
+| photocraft | 有 | ✅ 原本就已设置 |
+| cadcraft / wordcraft / gridcraft | **无** | — 不适用，已回退补丁 |
+| figcraft | 无（自定义 `SafServices`） | 另一套 seam，保存路径待确认 |
+| soundcraft | 无（`pick_files`/`write_shared` 形态） | 同上 |
+| filmcraft / effectcraft / printcraft | 无 `Services`（走 `fd::Host` trait） | 同上 |
+| craft-launcher | 无文件功能 | — |
+
+结论：`no file writer` 这个 bug 确定影响 vectorcraft / deckcraft / designcraft 三个（
+外加可能影响其它用到 `io::write_to` 的同族应用）；其余应用走的是不同的保存 seam，
+需要各自在真机上验一次「保存后字节非 0」，不能假设。
