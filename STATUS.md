@@ -1469,3 +1469,33 @@ app.services.write.as_mut().map(|w| w(path, &png))
 | photocraft | 有 | 原本已设 | — |
 | cadcraft / wordcraft / gridcraft | 无 | 不适用 | 补丁已回退 |
 | figcraft / soundcraft / filmcraft / effectcraft / printcraft | 无（各自 seam） | 待逐个确认 | 需真机验「保存后字节非 0」 |
+
+### 保存已在真机验证通过（0 字节 → 22,312 字节）
+
+补上 `services.read`/`services.write` 之后，同一套操作在真机上跑通：
+
+```
+$ adb shell ls -la /sdcard/Download/Untitled-1.vectorcraft
+-rw-rw---- 1 u0_a0 media_rw 22312 2026-10-20 13:29 /sdcard/Download/Untitled-1.vectorcraft
+
+VectorcraftSAF: published 22312 bytes to content://com.android.providers.downloads.documents/document/346
+VectorCraft: main: SAF: published /data/user/0/…/files/export/Untitled-1.vectorcraft (22312 bytes)
+```
+
+文件内容是真文档，不是空壳：
+
+```
+$ file saved.vectorcraft
+JSON data
+$ head -c 120 saved.vectorcraft
+{
+  "format": "vectorcraft",
+```
+
+**`no file writer` 不再出现。** 修复前同一个流程留下的是 0 字节文件 + `Can't save … no file writer` 弹窗。
+
+### 这个流程的三个坑（验证时按顺序做）
+1. `File › Save As…` **不能用 Ctrl+S**：Android 上键盘快捷键没接，必须点菜单。
+2. 选完保存位置后，应用会再弹自己的「VectorCraft Options」（压缩/版本/预览/分画板/ICC/PDF 兼容）。
+3. 那个对话框里的 Version 输入框会**自动聚焦并拉起键盘**，把 OK 按钮盖住 —— 必须先 `input keyevent 4` 收起键盘，再点 OK。
+   收键盘前后 OK 都是 `(1933,1479)`，但键盘在时点它会被输入法吞掉。
