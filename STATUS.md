@@ -1446,3 +1446,26 @@ orange BUTTON  center=(2678,1697) 179x69     # New Document 的 Create
 结论：`no file writer` 这个 bug 确定影响 vectorcraft / deckcraft / designcraft 三个（
 外加可能影响其它用到 `io::write_to` 的同族应用）；其余应用走的是不同的保存 seam，
 需要各自在真机上验一次「保存后字节非 0」，不能假设。
+
+### 再更正：`no file writer` 只是 vectorcraft 的文案，bug 本身更广
+
+搜字符串的结论是「只有 vectorcraft 有 `no file writer`」——但这**不等于**只有它有这个 bug。
+`deckcraft` 的 `crates/ui-egui/src/control.rs:317/419` 同样在调
+
+```rust
+app.services.write.as_mut().map(|w| w(path, &png))
+```
+
+只是钩子为空时它走别的分支（不报这句错），表现是**保存静默失败**而不是弹窗。
+
+所以准确的判断标准不是搜错误文案，而是**看该应用的 `Services` 是否读 `write`/`read` 字段**：
+
+| 应用 | Services 有 read/write | 受影响 | 处理 |
+|---|---|---|---|
+| vectorcraft | 有 | ✅ | 已修、已重建 |
+| deckcraft | 有 | ✅ | 已修，重建中 |
+| designcraft | 有 | ✅ | 已修，重建中 |
+| lightcraft | 有 | 原本已设 | — |
+| photocraft | 有 | 原本已设 | — |
+| cadcraft / wordcraft / gridcraft | 无 | 不适用 | 补丁已回退 |
+| figcraft / soundcraft / filmcraft / effectcraft / printcraft | 无（各自 seam） | 待逐个确认 | 需真机验「保存后字节非 0」 |
