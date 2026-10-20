@@ -1363,3 +1363,61 @@ curl --interface en0 --resolve uploads.github.com:443:20.205.243.161 \
 不是 `gh release view --json id` 返回的 `RE_...` node id。
 同名资产重复上传会被拒（`already_exists`），要先 DELETE 再 POST。
 已固化为 `scripts/gh-upload.sh`（自动替换同名资产）。
+
+---
+
+## 2026-10-20：保存为什么永远失败 —— `Services::write` 从未设置
+
+真机上点 File › Save As，选择器正常弹出、目标 URI 正常拿到、磁盘上文件也建出来了，
+但大小是 0，应用弹出：
+
+> **Can't save "Untitled-1.vectorcraft".  no file writer**
+
+一开始以为是扩展名不对（我给暂存文件起名 `.vectorcraft`）。查了写入器才发现不是：
+`crates/ui-egui/src/io.rs:281`
+
+```rust
+services.write.as_mut().ok_or("no file writer")?(path, bytes)
+```
+
+而 Android 端的 `Services::default()` 里 `read`/`write` **一直是 `None`**，从来没设过。
+所以**每一个** ArtCraft 应用的保存都是坏的，跟文件名无关。
+
+修法（`apps/<app>-android/src/lib.rs` 的 services 构造处）：
+
+```rust
+services.read  = Some(Box::new(|path: &str| std::fs::read(path).map_err(|e| format!("{path}: {e}"))));
+services.write = Some(Box::new(|path: &str, bytes: &[u8]| std::fs::write(path, bytes).map_err(|e| format!("{path}: {e}"))));
+```
+
+桌面端用自己那套文件抽象填这两个；Android 上 SAF 已经把用户的选择变成应用私有目录里的真实路径，
+所以一句 `std::fs` 就是全部工作。
+
+### 已应用 / 待应用（各应用的 services 构造方式不同，不能一把梭）
+
+| 形态 | 应用 | 状态 |
+|---|---|---|
+| `let mut services = Services::default();` + 闭包赋值 | vectorcraft、cadcraft、deckcraft、designcraft、wordcraft | ✅ 已打补丁（vectorcraft 已重建并装到真机） |
+| `fn services() -> Services { Services::default() }` | gridcraft | ⬜ 待改（结构不同，锚点不同） |
+| `SafServices::new(activity, data_dir, ctx)` 自定义类型 | figcraft | ⬜ 需先确认 `SafServices` 是否透传 read/write |
+| `) -> Services {` 函数体 | soundcraft | ⬜ 待看函数体 |
+| `Services { … }` 结构体字面量 | lightcraft | ⬜ 加两个字段即可 |
+| lib.rs 里完全没有 `Services` | filmcraft、photocraft、effectcraft、printcraft | ⬜ 它们的 SAF 在别的模块里，要先定位 services 从哪来 |
+| 无文件功能 | craft-launcher | — 不适用 |
+
+### 保存流程还有一个坑（不是 bug）
+VectorCraft 在**选完保存位置之后**还会弹一个自己的「VectorCraft Options」对话框
+（Use Compression / Version / Preview / 每画板单独存 / Include Linked Files / Embed ICC / PDF 兼容），
+必须点 OK 才真正写盘。验证时容易误以为是卡死。
+
+### 真机点按的正确做法
+肉眼在缩放预览图上估坐标，纵向会偏几十像素，正好点在按钮边缘外，表现得像「应用没响应」。
+改成用 PIL 在原始 3096×2064 截图上按颜色找按钮，一次命中：
+
+```
+orange BUTTON  center=(1933,1479) 179x69     # VectorCraft Options 的 OK
+blue   band    center=(2950,2003) 219x89     # 保存选择器的「保存」
+orange BUTTON  center=(2678,1697) 179x69     # New Document 的 Create
+```
+
+工具：`~/find-button.py <png> orange|blue`。
