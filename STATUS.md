@@ -1552,3 +1552,33 @@ panic 穿过 FFI 让 `android_main` 返回，Activity 随之消失 —— 表现
 结论：要么在应用侧做 inset 处理（egui 里包一层带顶部 margin 的 frame，并按
 `WindowInsets` 动态取值），要么改 `windowLayoutInDisplayCutoutMode`。属于外观问题，
 不影响打开/保存等核心功能，已回退到原主题避免引入风险。
+
+## 17. 真机验收状态（2026-10-22）
+
+设备：vivo PA2573 / Android 16 / arm64-v8a，`192.168.0.108:44213`，已解锁。
+**18 个包全部安装**：14 个 ArtCraft（13 应用 + 启动器）+ dsh + Blender + FreeCAD + Octave。
+
+| 应用 | 启动 | 界面渲染 | 打开 | 保存 |
+|---|---|---|---|---|
+| VectorCraft | ✅ | ✅ | ✅ 端到端日志 | ✅ **22,312 字节** |
+| FigCraft | ✅ 修复后 | ✅ 完整设计工具界面 | — | — |
+| SoundCraft | ✅ | ✅（顶部菜单被裁几像素，见 §16） | — | — |
+| DeckCraft / DesignCraft / CADCraft / WordCraft / GridCraft | ✅ 进程存活 | — | — | 已修 write 钩子并重建 |
+| FreeCAD | ✅ | ✅ 完整启动页 + 工具条 | ✅ | ✅ **1,749 字节，合法 .FCStd** |
+| Blender | ✅ | ✅（165,782 色） | 选择器已弹出 | ✅ 98,636 字节 |
+| Octave | ✅ | ✅ 控制台 + 出图 | — | — |
+| dsh | ✅ | ✅ web 起在 8900 | ✅ | ✅ |
+
+FreeCAD 保存的直接证据（不是「应该能」）：
+
+```
+$ adb shell ls -la /sdcard/Download/freecad-saf-saved.FCStd
+-rw-rw---- 1 u0_a0 media_rw 1749 2026-10-20 07:24 freecad-saf-saved.FCStd
+$ file fc-saved.FCStd
+Zip archive data, at least v2.0 to extract, compression method=deflate
+$ python3 -c "import zipfile; print(zipfile.ZipFile('fc-saved.FCStd').namelist())"
+['Document.xml', 'GuiDocument.xml', 'thumbnails/Thumbnail.png']
+```
+
+而且 FreeCAD 自己的启动页 Recent Files 里就列着 `freecad-saf-sav… 1.7 kB` —— 应用自己也认得这个文件，
+说明写回的不只是字节，而是一个它能重新打开的文档。
