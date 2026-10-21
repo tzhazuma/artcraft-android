@@ -1518,3 +1518,37 @@ $ head -c 120 saved.vectorcraft
 
 另外注意：`src/gridcraft` 的源码图标本来是对的，但 `out/` 里那个是 10-17 的旧包；
 **光看源码会以为没问题，必须看产物**。
+
+## 15. FigCraft 闪退：已修复并验证
+
+真机日志给出了确切原因（不是猜的）：
+
+```
+thread '<unnamed>' panicked at epaint-0.36.2/src/text/fonts.rs:1025:
+FontFamily::Name("semibold") is not bound to any fonts
+```
+
+首帧在主题安装字体之前就用到了 `semibold` 字体族，epaint 对未绑定的族是直接 panic，
+panic 穿过 FFI 让 `android_main` 返回，Activity 随之消失 —— 表现就是「一打开就闪退」，
+而进程还会残存几秒，很容易误判成别的原因。
+
+修法：在 `setup_fonts` 里先给 `semibold` 绑上 proportional 的那套字体作为占位，
+主题真正装字体时再覆盖。修复后真机验证：进程存活、Activity 留在前台、设计工具界面完整渲染
+（标签栏 / Pages / Layers / 画布 / 属性面板 / 导出 PNG / 底部工具条）。
+
+## 16. SoundCraft / CADCraft 顶部 UI 被压住：诊断清楚，暂不改
+
+现象：菜单栏（SoundCraft / File / Edit / …）最上面一行文字被裁掉几个像素。
+
+原因：这类应用是桌面 UI，**自己把菜单栏画在窗口 y=0**，而 Android 15+ 强制 edge-to-edge，
+窗口会延伸到状态栏/挖孔区域之下。
+
+试过两种改法，都不行：
+
+1. 去掉 `windowFullscreen` 只留 opt-out → 状态栏出现了，**菜单栏整个消失**（应用按全屏布局写死）。
+2. 恢复 `windowFullscreen` 并加 `windowOptOutEdgeToEdgeEnforcement=true` → 截图字节数与改动前
+   **完全一致**，即在这个 ROM（Android 16 / OriginOS）上 opt-out 已不再生效。
+
+结论：要么在应用侧做 inset 处理（egui 里包一层带顶部 margin 的 frame，并按
+`WindowInsets` 动态取值），要么改 `windowLayoutInDisplayCutoutMode`。属于外观问题，
+不影响打开/保存等核心功能，已回退到原主题避免引入风险。
