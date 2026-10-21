@@ -1582,3 +1582,29 @@ $ python3 -c "import zipfile; print(zipfile.ZipFile('fc-saved.FCStd').namelist()
 
 而且 FreeCAD 自己的启动页 Recent Files 里就列着 `freecad-saf-sav… 1.7 kB` —— 应用自己也认得这个文件，
 说明写回的不只是字节，而是一个它能重新打开的文档。
+
+## 18. 保存验证：四个应用、三套不同的 SAF 实现，全部通过
+
+| 应用 | 落盘证据 | 实现方式 |
+|---|---|---|
+| VectorCraft | `/sdcard/Download/Untitled-1.vectorcraft` **22,312 字节**（JSON，`"format":"vectorcraft"`） | egui `Services::write` |
+| DeckCraft | `/sdcard/Download/Presentation1.deckcraft (1)` **4,592 字节**，时间戳 01:55（同名已存在，系统加 ` (1)`） | egui `Services::write` |
+| FreeCAD | `freecad-saf-saved.FCStd` **1,749 字节**，合法 zip（`Document.xml`/`GuiDocument.xml`/缩略图），且出现在应用自己的 Recent Files 里 | Qt `QFileDialog` + `resolveContentUri` |
+| Blender | `usr/saf-test.blend` **98,636 字节**，与 `files/export/Untitled.blend` 等长 | SDL + 两阶段 publish |
+
+DeckCraft 的保存入口不在菜单里 —— 是工具栏**第二个图标**（坐标为设备 `(117,33)`），
+`File` 菜单点不开、`Ctrl+S` 也没接。这类「桌面应用移植到触摸屏」的坑，
+只能靠逐个试出来。
+
+## 19. ArtCraft 全系列 GUI 体检结果（14/14 通过）
+
+判据：进程存活 + Activity 留在前台 + 截图颜色数（空白/崩溃画面只会有 1–3 种颜色）。
+
+```
+vectorcraft 486   figcraft 125    designcraft 311   deckcraft 389
+cadcraft 621      wordcraft 525   gridcraft 155     soundcraft 393
+filmcraft 167     lightcraft 862  photocraft 228    effectcraft 219
+printcraft 338    launcher 716
+```
+
+全部远高于空白判据，即都渲染出了真实界面。
