@@ -1611,7 +1611,7 @@ printcraft 338    launcher 716
 
 ## 2026-10-22：顶部菜单被裁切的真正修法（egui 侧下移，不是 Android 主题）
 
-现象：SoundCraft / CADCraft 的菜单栏（`SoundCraft File Edit View …`）最上面一行文字被切掉。
+现象：SoundCraft / CADCraft 的菜单栏（`SoundCraft File Edit View …`）文字底部被切掉（**不是顶部** —— 早先的判断是反的；旧截图里可见的 18 行正是完整 26 行墨迹的上半部分，缺的 8 行在下方）。
 
 之前试过的两条 Android 侧方案都无效：
 
@@ -1636,3 +1636,38 @@ ui.scope_builder(egui::UiBuilder::new().max_rect(inset), |ui| {
 
 **SoundCraft 真机验证**：菜单栏完整显示，不再裁切。
 CADCraft 同样改法，已重建。
+
+## 2026-10-23：菜单裁切真正修好（子智能体实测）
+
+### 真因
+
+菜单栏面板是**固定高度**的：SoundCraft `exact_size(24.0)`、CADCraft `exact_size(22.0)`。
+而 Android 触摸壳把 `style.spacing.interact_size` 设成 `(40, 40)`。
+`egui::MenuBar` 会把行高设成 `interact_size.y` 并把按钮居中 —— 于是文字中心落在
+条内约 20pt 处，**下半部分超出固定高度的面板，被分隔线/下一个面板盖住**。
+
+所以是**底部裁切**。之前三次 Android 侧改动（去全屏、opt-out、cutout never）
+和两次 egui 整层下移都无效，因为裁切发生在条**内部**，整体平移只会把裁切一起搬走。
+
+### 修法
+
+菜单栏高度改为从样式推导：
+
+```rust
+// soundcraft/crates/ui-egui/src/menus.rs
+let bar_height = 24.0_f32.max(ui.spacing().interact_size.y + 4.0);   // 桌面仍 24，Android 44
+// cadcraft/crates/ui-egui/src/menus.rs
+let bar_height = 22.0_f32.max(ui.spacing().interact_size.y);         // 桌面仍 22，Android 40
+```
+
+同时删掉两个 app 里的 +28pt 整层位移（它们只是多出一条 70px 的黑带）。
+
+### 实测（PA2573，2064×3096，400dpi → 2.5 px/pt）
+
+| | 条高 | 墨迹 | 结果 |
+|---|---|---|---|
+| SoundCraft 修前 | 24pt (60px) | 18px | 裁切 |
+| SoundCraft 修后 | 44pt (110px) | **26px** | 完整 |
+| CADCraft 修后 | 40pt (100px) | 24px | 完整 |
+
+点击命中也验证过：点 SoundCraft (60,52) 弹出菜单、点 CADCraft "Help" (1215,136) 弹出下拉。
