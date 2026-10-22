@@ -1608,3 +1608,31 @@ printcraft 338    launcher 716
 ```
 
 全部远高于空白判据，即都渲染出了真实界面。
+
+## 2026-10-22：顶部菜单被裁切的真正修法（egui 侧下移，不是 Android 主题）
+
+现象：SoundCraft / CADCraft 的菜单栏（`SoundCraft File Edit View …`）最上面一行文字被切掉。
+
+之前试过的两条 Android 侧方案都无效：
+
+| 尝试 | 结果 |
+|---|---|
+| 去掉 `windowFullscreen`，只留 edge-to-edge opt-out | 状态栏出现了，但**菜单栏整个消失**（应用按全屏布局写死） |
+| 保留全屏 + `windowOptOutEdgeToEdgeEnforcement=true` | 截图与改动前**字节完全相同**，这个 ROM 上 opt-out 已失效 |
+| 把 `windowLayoutInDisplayCutoutMode` 从 `shortEdges` 改成 `never` | 同样**字节完全相同**，全屏下该模式不生效 |
+
+**真正有效的做法**：在 egui 侧把 UI 整体下移。这些应用的 Android 壳实现了
+`eframe::App::ui(&mut self, ui: &mut egui::Ui, …)`，拿到的是根 `Ui`，
+把它的 `max_rect` 从顶部缩进即可：
+
+```rust
+const TOP_INSET: f32 = 28.0;   // 状态栏/挖孔高度（逻辑点）
+let rect = ui.max_rect();
+let inset = egui::Rect::from_min_max(rect.min + egui::vec2(0.0, TOP_INSET), rect.max);
+ui.scope_builder(egui::UiBuilder::new().max_rect(inset), |ui| {
+    self.app.ui(ui);
+});
+```
+
+**SoundCraft 真机验证**：菜单栏完整显示，不再裁切。
+CADCraft 同样改法，已重建。
