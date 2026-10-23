@@ -1,0 +1,91 @@
+diff --git a/crates/core/src/platform.rs b/crates/core/src/platform.rs
+index 398b34d..52868a6 100644
+--- a/crates/core/src/platform.rs
++++ b/crates/core/src/platform.rs
+@@ -16,6 +16,9 @@ pub enum Os {
+     MacOs,
+     Linux,
+     FreeBsd,
++    /// Android. Its own variant rather than Linux: `cfg!(target_os = "linux")` is false here, so
++    /// without this the platform is unknown and every app is reported "Not available here".
++    Android,
+ }
+ 
+ impl Os {
+@@ -25,6 +28,7 @@ impl Os {
+             Self::MacOs => "macOS",
+             Self::Linux => "Linux",
+             Self::FreeBsd => "FreeBSD",
++            Self::Android => "Android",
+         }
+     }
+ }
+@@ -63,6 +67,8 @@ pub enum PackageKind {
+     Flatpak,
+     /// Linux or FreeBSD tarball (`bin/<app>`, `share/…`).
+     TarGz,
++    /// Android package, installed by the system installer.
++    Apk,
+ }
+ 
+ impl PackageKind {
+@@ -76,6 +82,7 @@ impl PackageKind {
+             Self::Rpm => "RPM package (.rpm)",
+             Self::Flatpak => "Flatpak bundle",
+             Self::TarGz => "Tarball (.tar.gz)",
++            Self::Apk => "Android package (.apk)",
+         }
+     }
+ 
+@@ -89,6 +96,7 @@ impl PackageKind {
+             Self::Rpm => ".rpm",
+             Self::Flatpak => ".flatpak",
+             Self::TarGz => ".tar.gz",
++            Self::Apk => ".apk",
+         }
+     }
+ }
+@@ -111,6 +119,8 @@ impl Platform {
+             Os::Linux
+         } else if cfg!(target_os = "freebsd") {
+             Os::FreeBsd
++        } else if cfg!(target_os = "android") {
++            Os::Android
+         } else {
+             return None;
+         };
+@@ -150,6 +160,8 @@ impl Platform {
+             (Os::Linux, Arch::X86) => &[],
+             (Os::FreeBsd, Arch::X64) => &["freebsd-x86_64"],
+             (Os::FreeBsd, _) => &[],
++            (Os::Android, Arch::Arm64) => &["android-arm64", "android-aarch64"],
++            (Os::Android, _) => &[],
+         }
+     }
+ 
+@@ -160,6 +172,7 @@ impl Platform {
+             Os::MacOs => &[PackageKind::Dmg],
+             Os::Linux => &[PackageKind::AppImage, PackageKind::TarGz],
+             Os::FreeBsd => &[PackageKind::TarGz],
++            Os::Android => &[PackageKind::Apk],
+         }
+     }
+ 
+@@ -170,6 +183,7 @@ impl Platform {
+             Os::MacOs => &[PackageKind::Dmg],
+             Os::Linux => &[PackageKind::AppImage, PackageKind::Deb, PackageKind::Rpm, PackageKind::Flatpak, PackageKind::TarGz],
+             Os::FreeBsd => &[PackageKind::TarGz],
++            Os::Android => &[PackageKind::Apk],
+         }
+     }
+ }
+@@ -186,7 +200,8 @@ pub struct AssetName {
+ /// Reads `<stem>-<version>-<os>-<arch>[-portable].<ext>`; `None` for checksums, zsync files, CLI
+ /// and web bundles, or anything else.
+ pub fn parse_asset_name(name: &str, stems: &[&str]) -> Option<AssetName> {
+-    const KINDS: [PackageKind; 8] = [
++    const KINDS: [PackageKind; 9] = [
++        PackageKind::Apk,
+         PackageKind::PortableZip,
+         PackageKind::TarGz,
+         PackageKind::Msi,

@@ -30,3 +30,16 @@ let bar_height = 22.0_f32.max(ui.spacing().interact_size.y);
 
 Measured on device: SoundCraft's menu ink went from 18 clipped rows to the full 26; CADCraft's
 is complete at 24. Taps still open the menus.
+
+## launcher-platform-android.patch
+
+`Os::current()` returned `None` on Android: it tests `cfg!(target_os = "linux")`, which is false
+when `target_os = "android"`, so the launcher had no platform at all and every app showed
+"Not available here" (此平台不可用).
+
+The patch adds `Os::Android` with the `android-arm64` / `android-aarch64` tokens the ports actually
+publish, and `PackageKind::Apk` so `<stem>-<version>-android-arm64.apk` parses instead of being
+skipped by `parse_asset_name`.
+
+Not covered yet: detecting already-installed apps (needs a `PackageManager` query over JNI) and
+pointing downloads at the ported releases.
