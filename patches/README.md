@@ -43,3 +43,16 @@ skipped by `parse_asset_name`.
 
 Not covered yet: detecting already-installed apps (needs a `PackageManager` query over JNI) and
 pointing downloads at the ported releases.
+
+### Second change in the same patch: the version segment is optional
+
+The ported builds are uploaded as `Photocraft-android-arm64.apk`, with no version — but
+`parse_asset_name` required `<stem>-<version>-<os>-<arch>`, so no asset ever matched and every app
+still said "Not available here" even after the platform itself was recognised. The parser now
+accepts `<stem>-<os>-<arch>` too.
+
+With both changes the launcher's status bar reads "安装平台: ANDROID ARM64" instead of having no
+platform at all. What remains is the release fetch: the cards sit at "离线" (offline), which points
+at HTTPS in the Android shell — `ports/craft-launcher-android/src/lib.rs` notes that
+rustls-platform-verifier needs a Kotlin component and a Maven dependency to reach the platform trust
+store, and this build has neither.

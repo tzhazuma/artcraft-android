@@ -1,5 +1,5 @@
 diff --git a/crates/core/src/platform.rs b/crates/core/src/platform.rs
-index 398b34d..52868a6 100644
+index 398b34d..b0c85be 100644
 --- a/crates/core/src/platform.rs
 +++ b/crates/core/src/platform.rs
 @@ -16,6 +16,9 @@ pub enum Os {
@@ -89,3 +89,34 @@ index 398b34d..52868a6 100644
          PackageKind::PortableZip,
          PackageKind::TarGz,
          PackageKind::Msi,
+@@ -199,13 +214,24 @@ pub fn parse_asset_name(name: &str, stems: &[&str]) -> Option<AssetName> {
+     let (kind, base) = KINDS.iter().find_map(|k| name.strip_suffix(k.suffix()).map(|b| (*k, b)))?;
+     for stem in stems {
+         let Some(rest) = base.strip_prefix(stem).and_then(|r| r.strip_prefix('-')) else { continue };
+-        // rest = <version>-<os>-<arch>; os and arch never contain '-', versions may.
++        // rest = [<version>-]<os>-<arch>; os and arch never contain '-', versions may.
++        //
++        // The version is optional because the ported builds are uploaded as
++        // `Photocraft-android-arm64.apk`, with no version segment at all. Requiring one made every
++        // asset unmatchable, which the launcher reports as "Not available here" -- the same screen
++        // an unsupported platform shows, so it read as a platform bug.
+         let mut parts = rest.rsplitn(3, '-');
+-        let (arch, os, version) = (parts.next()?, parts.next()?, parts.next()?);
+-        if crate::version::parse(version).is_none() || !version.starts_with(|c: char| c.is_ascii_digit()) {
+-            continue;
+-        }
+-        return Some(AssetName { stem: (*stem).to_string(), version: version.to_string(), token: format!("{os}-{arch}"), kind });
++        let arch = parts.next()?;
++        let os = parts.next()?;
++        let version = parts.next().filter(|v| {
++            crate::version::parse(v).is_some() && v.starts_with(|c: char| c.is_ascii_digit())
++        });
++        return Some(AssetName {
++            stem: (*stem).to_string(),
++            version: version.unwrap_or_default().to_string(),
++            token: format!("{os}-{arch}"),
++            kind,
++        });
+     }
+     None
+ }
