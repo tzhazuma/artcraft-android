@@ -73,3 +73,14 @@ Verified as far as the device allowed: with INTERNET added the launcher fetches 
 (cards show "版本 0.14.0 · 2026年10月23日"), reads 149 system root certificates, and the status bar
 reads "安装平台: ANDROID ARM64". The case-insensitive build was installed but the device dropped off
 wireless adb before its UI could be checked, so whether the cards now offer Install is unconfirmed.
+
+### Fifth change: installed apps, detected
+
+The launcher looks for `.app` bundles, desktop files and package-manager records; none exist on
+Android, so every app read as "not installed" even after it had been installed. The Rust crate has
+no JNI, and `PackageManager` is unreachable without it — but the activity already has both, so it
+writes `<files>/installed-apps.txt` (`<package id>\t<version name>` per line) and
+`artcraft-launcher-native`'s Android detection reads it, reporting `InstallSource::Apk`.
+
+Compiles for aarch64-linux-android and the APK builds. Not yet verified on a device: wireless adb
+went away mid-session.
