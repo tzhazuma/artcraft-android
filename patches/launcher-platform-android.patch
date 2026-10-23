@@ -1,5 +1,5 @@
 diff --git a/crates/core/src/platform.rs b/crates/core/src/platform.rs
-index 398b34d..b0c85be 100644
+index 398b34d..ef54945 100644
 --- a/crates/core/src/platform.rs
 +++ b/crates/core/src/platform.rs
 @@ -16,6 +16,9 @@ pub enum Os {
@@ -89,11 +89,20 @@ index 398b34d..b0c85be 100644
          PackageKind::PortableZip,
          PackageKind::TarGz,
          PackageKind::Msi,
-@@ -199,13 +214,24 @@ pub fn parse_asset_name(name: &str, stems: &[&str]) -> Option<AssetName> {
+@@ -197,15 +212,32 @@ pub fn parse_asset_name(name: &str, stems: &[&str]) -> Option<AssetName> {
+         PackageKind::Flatpak,
+     ];
      let (kind, base) = KINDS.iter().find_map(|k| name.strip_suffix(k.suffix()).map(|b| (*k, b)))?;
++    // Case-insensitive: the app ids are lowercase (`photocraft`) but the uploaded assets are
++    // capitalised (`Photocraft-android-arm64.apk`), and a case-sensitive prefix match silently
++    // skipped every asset -- which is reported as "Not available here", not as a naming problem.
++    let lower = base.to_ascii_lowercase();
      for stem in stems {
-         let Some(rest) = base.strip_prefix(stem).and_then(|r| r.strip_prefix('-')) else { continue };
+-        let Some(rest) = base.strip_prefix(stem).and_then(|r| r.strip_prefix('-')) else { continue };
 -        // rest = <version>-<os>-<arch>; os and arch never contain '-', versions may.
++        let Some(rest) = lower.strip_prefix(&stem.to_ascii_lowercase())
++            .and_then(|r| r.strip_prefix('-'))
++            .map(|r| &base[base.len() - r.len()..]) else { continue };
 +        // rest = [<version>-]<os>-<arch>; os and arch never contain '-', versions may.
 +        //
 +        // The version is optional because the ported builds are uploaded as

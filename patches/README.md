@@ -56,3 +56,20 @@ platform at all. What remains is the release fetch: the cards sit at "离线" (o
 at HTTPS in the Android shell — `ports/craft-launcher-android/src/lib.rs` notes that
 rustls-platform-verifier needs a Kotlin component and a Maven dependency to reach the platform trust
 store, and this build has neither.
+
+### Third change: the APK had no INTERNET permission
+
+The manifest declared none, so every release fetch failed and the launcher showed every app as
+"离线" while the platform was recognised correctly. The symptom reads as a network or TLS fault;
+the cause is one missing `<uses-permission>` line. Added to the same patch.
+
+### Fourth change: asset stems are matched case-insensitively
+
+The app ids are lowercase (`photocraft`) and the uploaded assets are capitalised
+(`Photocraft-android-arm64.apk`), so `strip_prefix` skipped every asset. A case-insensitive
+comparison fixes it.
+
+Verified as far as the device allowed: with INTERNET added the launcher fetches the release feed
+(cards show "版本 0.14.0 · 2026年10月23日"), reads 149 system root certificates, and the status bar
+reads "安装平台: ANDROID ARM64". The case-insensitive build was installed but the device dropped off
+wireless adb before its UI could be checked, so whether the cards now offer Install is unconfirmed.
