@@ -93,6 +93,16 @@ fn android_main(app: AndroidApp) {
     );
     log::info!("artcraft-launcher-android: starting (ArtCraft Launcher {})", env!("CARGO_PKG_VERSION"));
 
+    // Releases for this port live in RELEASE_REPO (tzhazuma/artcraft-android), and the upstream
+    // feed only advertises desktop builds. Skipping it makes every app resolve against the port's
+    // own GitHub releases instead of reporting "not available here".
+    // set_var is unsafe in edition 2024 because another thread could read it concurrently; this
+    // runs before any thread that reads the environment exists.
+    #[allow(unsafe_code)]
+    unsafe {
+        std::env::set_var("ARTCRAFT_LAUNCHER_NO_FEED", "1");
+    }
+
     // Before anything builds a backend: `NativeBackend::new` calls `Paths::new`, and on Android
     // `dirs` answers nothing, which would leave the launcher's cache in an unwritable `/tmp`.
     match app.internal_data_path() {

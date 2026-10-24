@@ -84,3 +84,18 @@ writes `<files>/installed-apps.txt` (`<package id>\t<version name>` per line) an
 
 Compiles for aarch64-linux-android and the APK builds. Not yet verified on a device: wireless adb
 went away mid-session.
+
+### Sixth and seventh changes: releases from the port's own repository
+
+The launcher was reading release metadata from the upstream ArtCraft feed, which advertises
+desktop-only assets; the Android assets live in `tzhazuma/artcraft-android`. `feed_url()` now honours
+`ARTCRAFT_LAUNCHER_NO_FEED`, and the port sets it, so every release is read from `RELEASE_REPO` over
+GitHub.
+
+Verified on the device: the cards read "可安装" with an 安装 button, the version line shows
+"android-v1", and the status bar reads "来源: GITHUB / 安装平台: ANDROID ARM64".
+
+Also declared `QUERY_ALL_PACKAGES`: Android 11+ hides other packages from getInstalledPackages, so
+the installed suite was invisible and every card said "not installed". Whether that fixed the
+"已安装 0" count is unconfirmed -- this launcher renders through a SurfaceView, and screencap on
+this ROM keeps returning the same frame, so the UI cannot be read back reliably.

@@ -222,7 +222,7 @@ index 43459c3..a0e65e9 100644
      }
  
 diff --git a/crates/native/src/backend.rs b/crates/native/src/backend.rs
-index 490c726..f28d631 100644
+index 490c726..22f25ad 100644
 --- a/crates/native/src/backend.rs
 +++ b/crates/native/src/backend.rs
 @@ -759,7 +759,14 @@ fn limit_notice(source_used: Source, limited_until: Option<i64>) -> Option<i64>
@@ -240,7 +240,21 @@ index 490c726..f28d631 100644
      feed.map_or_else(|| app.repo.to_string(), |f| f.repo_for(app))
  }
  
-@@ -1047,6 +1054,24 @@ mod tests {
+@@ -830,6 +837,13 @@ fn fetch_feed(http: &Http, paths: &Paths, url: &str, throttle: &Mutex<FeedThrott
+ /// The feed's address. `ARTCRAFT_LAUNCHER_FEED_URL` points at a staging server or a local copy
+ /// (only `https://`, or plain `http://` on localhost).
+ fn feed_url() -> String {
++    // A port ships its own builds in its own repository, so the upstream release feed is not a
++    // source of truth for it -- and worse, it answers with desktop-only assets, which the launcher
++    // then reports as "not available here". With this set the feed is skipped entirely and every
++    // release is read from RELEASE_REPO over GitHub.
++    if std::env::var("ARTCRAFT_LAUNCHER_NO_FEED").is_ok() {
++        return String::new();
++    }
+     std::env::var("ARTCRAFT_LAUNCHER_FEED_URL")
+         .ok()
+         .filter(|u| u.starts_with("https://") || is_loopback(u))
+@@ -1047,6 +1061,24 @@ mod tests {
      use super::*;
      use crate::source::Answer;
  
