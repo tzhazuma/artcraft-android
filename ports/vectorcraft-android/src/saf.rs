@@ -26,14 +26,23 @@ fn call<T>(activity: usize, body: impl FnOnce(&mut jni::Env<'_>, &JObject<'_>) -
     // valid for the life of the process; `from_raw` only wraps the pointer in the jni crate's type
     // (it caches the JVM, which the JVM itself ref-counts for the process lifetime).
     let vm = unsafe { JavaVM::from_raw(ctx.vm().cast()) };
-    vm.attach_current_thread(|env| -> jni::errors::Result<T> {
+    match vm.attach_current_thread(|env| -> jni::errors::Result<T> {
         // SAFETY: the pointer is `AndroidApp::activity_as_ptr()`, a reference to the running
         // activity that is valid for the whole process; `JObject::from_raw` borrows it for this JNI
         // frame.
         let activity = unsafe { JObject::from_raw(env, activity as *mut _) };
         body(env, &activity)
-    })
-    .ok()
+    }) {
+        Ok(value) => Some(value),
+        Err(err) => {
+            /* Android-port: this was `.ok()`, which turned every JNI failure into `None`. That made
+             * "the picker never appeared" indistinguishable from "the user cancelled" -- the wrong
+             * default for a file dialog, and the reason this bug stayed hidden. Log it: a missing
+             * method or a thrown exception is a bug, silence is not. */
+            log::error!("SAF: JNI call failed: {err:?}");
+            None
+        }
+    }
 }
 
 /// Open the system document picker and return the paths copied into the app directory (empty when
@@ -47,8 +56,10 @@ pub fn pick_media(activity: usize, data_dir: &Path, timeout: Duration) -> Vec<St
     let manifest: PathBuf = data_dir.join(MANIFEST);
     let _ = std::fs::remove_file(&manifest);
 
+    log::info!("SAF: pick_media -> calling safPickMedia()");
     let picked = call(activity, |env, activity| {
         env.call_method(activity, jni_str!("safPickMedia"), jni_sig!("()V"), &[])?;
+        log::info!("SAF: safPickMedia() returned; polling safIsDone()");
         let deadline = Instant::now() + timeout;
         loop {
             let done = env.call_method(activity, jni_str!("safIsDone"), jni_sig!("()Z"), &[])?.z().unwrap_or(false);
@@ -63,6 +74,7 @@ pub fn pick_media(activity: usize, data_dir: &Path, timeout: Duration) -> Vec<St
         }
     });
 
+    log::info!("SAF: pick_media finished: {picked:?}");
     match picked {
         Some(true) => read_manifest(&manifest),
         _ => Vec::new(),
