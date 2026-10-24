@@ -110,6 +110,18 @@ fn services(
 ) -> Services {
     let mut services = Services::default();
 
+    /* Android-port: `read`/`write` default to None and every save ends in `io::write_to`, which is
+     * `services.write.as_mut().ok_or("no file writer")?`. Left unset, *every* save fails with a
+     * dialog reading `no file writer`. Desktop supplies these through its own file abstraction; on
+     * Android plain std::fs calls are the whole job, because the SAF layer has already turned the
+     * user's pick into a real path inside the app's own storage. */
+    services.read = Some(Box::new(|path: &str| {
+        std::fs::read(path).map_err(|e| format!("{path}: {e}"))
+    }));
+    services.write = Some(Box::new(|path: &str, bytes: &[u8]| {
+        std::fs::write(path, bytes).map_err(|e| format!("{path}: {e}"))
+    }));
+
     let open_ctrl = ctrl.clone();
     let open_dir = data_dir.clone();
     services.pick_open = Some(Box::new(move |_purpose: &str| {
