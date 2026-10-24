@@ -123,6 +123,15 @@ fn setup_fonts(ctx: &egui::Context) {
     for family in [egui::FontFamily::Proportional, egui::FontFamily::Monospace] {
         fonts.families.entry(family).or_default().push("system-cjk".to_owned());
     }
+    /* Android-port: the first frame can paint with the theme's `semibold` family before the theme
+     * has installed its own font definitions, and epaint panics outright on an unbound family:
+     *   FontFamily::Name("semibold") is not bound to any fonts
+     * That panic unwinds out of run_native, android_main returns, and the activity disappears --
+     * the app "crashes" on launch with the process briefly surviving. Bind the same faces as a
+     * placeholder; the theme replaces them with the real semibold on its first pass. */
+    if let Some(faces) = fonts.families.get(&egui::FontFamily::Proportional).cloned() {
+        fonts.families.insert(egui::FontFamily::Name("semibold".into()), faces);
+    }
     ctx.set_fonts(fonts);
     log::info!("figcraft-android: CJK fallback font {path}");
 }
