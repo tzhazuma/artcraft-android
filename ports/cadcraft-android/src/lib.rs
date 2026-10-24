@@ -109,6 +109,7 @@ fn services(
 ) -> Services {
     let mut services = Services::default();
 
+
     let open_ctrl = ctrl.clone();
     let open_dir = data_dir.clone();
     services.pick_open = Some(Box::new(move || {
@@ -271,6 +272,10 @@ impl eframe::App for TouchShell {
     }
 
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
+        /* The window is full-screen on Android and the status bar is hidden, so the surface
+         * really does start at y = 0 and the UI needs no safe-area inset. The old 28 pt root-Ui
+         * shift only added a black band and did not fix the clipped menu bar: that clipping
+         * came from the bar's fixed 22 pt height (see menus::menu_bar). */
         self.app.ui(ui);
         if !self.tuned {
             self.tuned = true;
