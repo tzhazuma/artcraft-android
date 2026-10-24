@@ -109,6 +109,7 @@ fn services(
 ) -> Services {
     let mut services = Services::default();
 
+
     // WordCraft's control channel has no `app.open`; it exposes `engine.execute`, which runs any
     // engine command by id. `file.open` is one of those, so the round trip is the same shape.
     let open_ctrl = ctrl.clone();
