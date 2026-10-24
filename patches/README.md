@@ -99,3 +99,12 @@ Also declared `QUERY_ALL_PACKAGES`: Android 11+ hides other packages from getIns
 the installed suite was invisible and every card said "not installed". Whether that fixed the
 "已安装 0" count is unconfirmed -- this launcher renders through a SurfaceView, and screencap on
 this ROM keeps returning the same frame, so the UI cannot be read back reliably.
+
+### Eighth change: installed apps, actually detected
+
+`getInstalledPackages(0)` on this ROM answers with only the launcher itself, even with
+QUERY_ALL_PACKAGES and a `<queries>` block naming the rest. The activity now probes each suite id
+with `getPackageInfo(name, 0)` and merges whatever the listing does return.
+
+Verified on the device: `files/installed-apps.txt` holds 14 lines with versions, and the launcher's
+tabs read 全部 13 / 已安装 12 / 更新 0 / 未安装 1.
