@@ -109,7 +109,9 @@ fn android_main(app: AndroidApp) {
         Some(dir) => {
             log::info!("artcraft-launcher-android: data root {}", dir.display());
             let _ = std::fs::create_dir_all(&dir);
-            artcraft_launcher_native::paths::set_root(dir);
+            artcraft_launcher_native::paths::set_root(dir.clone());
+            // The launch bridge writes its request into this same directory.
+            artcraft_launcher_native::android::set_root(dir);
         }
         None => log::error!("artcraft-launcher-android: no internal data path; downloads cannot be kept"),
     }

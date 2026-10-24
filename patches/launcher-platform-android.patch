@@ -393,7 +393,7 @@ index 8a30448..4372b2a 100644
          let proxy = crate::proxy::pick();
          let small = ureq::Agent::config_builder()
 diff --git a/crates/native/src/install.rs b/crates/native/src/install.rs
-index 607b971..3b63db2 100644
+index 607b971..5cdbc69 100644
 --- a/crates/native/src/install.rs
 +++ b/crates/native/src/install.rs
 @@ -259,6 +259,8 @@ pub fn choose_kinds(existing: Option<&Installed>, record: Option<&Record>, prefe
@@ -405,6 +405,33 @@ index 607b971..3b63db2 100644
          };
          if let Some(k) = kind.filter(|k| available.contains(k)) {
              return vec![k];
+@@ -419,6 +421,13 @@ pub fn launch(app: &CraftApp, installed: &Installed, paths: &Paths) -> Result<()
+     let _ = paths;
+     let path = Path::new(&installed.location);
+     match installed.source {
++        // Android has no binary to exec: the app is a package, and only the system can start it.
++        #[cfg(target_os = "android")]
++        InstallSource::Apk => {
++            let package = installed.package.clone().unwrap_or_else(|| app.bundle_id());
++            return crate::android::launch(package.as_str())
++                .map_err(|e| format!("Couldn't open {}: {e}", app.name));
++        }
+         InstallSource::Flatpak => {
+             let mut cmd = process::flatpak_command();
+             cmd.args(["run", &app.bundle_id()]);
+diff --git a/crates/native/src/lib.rs b/crates/native/src/lib.rs
+index 1b21e07..46577bf 100644
+--- a/crates/native/src/lib.rs
++++ b/crates/native/src/lib.rs
+@@ -13,6 +13,8 @@ pub mod detect;
+ pub mod feed_throttle;
+ pub mod http;
+ pub mod install;
++#[cfg(target_os = "android")]
++pub mod android;
+ pub mod login;
+ pub mod manifest;
+ pub mod packages;
 diff --git a/crates/native/src/paths.rs b/crates/native/src/paths.rs
 index 83b31dc..e192e4f 100644
 --- a/crates/native/src/paths.rs

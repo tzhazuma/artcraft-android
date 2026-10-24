@@ -108,3 +108,16 @@ with `getPackageInfo(name, 0)` and merges whatever the listing does return.
 
 Verified on the device: `files/installed-apps.txt` holds 14 lines with versions, and the launcher's
 tabs read 全部 13 / 已安装 12 / 更新 0 / 未安装 1.
+
+### Ninth change: starting an installed app
+
+`install::launch` had no Android branch -- it fell through to `process::launch_binary`, which
+cannot start an Android app. The workspace forbids `unsafe`, so the JNI half cannot live in the
+native crate; and a JNI attempt in the port crate ran into a version mismatch in `jni`.
+
+So the two halves talk through a file: the Rust side writes the package id to
+`launch-request.txt` in the app's data directory, and the Activity watches that file (500 ms poll,
+only meaningful while the launcher is in the foreground, which it is whenever a card is tapped) and
+calls `startActivity`.
+
+Verified on the device: force-stop an app, open the launcher, tap 打开, and the app starts.

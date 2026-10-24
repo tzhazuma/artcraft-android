@@ -23,6 +23,8 @@ name = "main"
 crate-type = ["cdylib"]
 
 [target.'cfg(target_os = "android")'.dependencies]
+jni = "0.22"
+ndk-context = "0.1"
 artcraft-launcher-core = { workspace = true }
 artcraft-launcher-ui-egui = { workspace = true }
 artcraft-launcher-native = { workspace = true }
