@@ -178,6 +178,10 @@ impl eframe::App for TouchShell {
 
     fn raw_input_hook(&mut self, _ctx: &egui::Context, raw: &mut egui::RawInput) {
         self.app.raw_input_hook(raw);
+        /* The window is full-screen on Android and the status bar is hidden, so the surface
+         * really does start at y = 0 and the UI needs no safe-area inset. The old 28 pt
+         * screen_rect shift only added a black band and did not fix the clipped menu bar:
+         * that clipping came from the bar's fixed 24 pt height (see menus::menu_bar). */
     }
 
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
