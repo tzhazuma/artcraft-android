@@ -1671,3 +1671,49 @@ let bar_height = 22.0_f32.max(ui.spacing().interact_size.y);         // 桌面�
 | CADCraft 修后 | 40pt (100px) | 24px | 完整 |
 
 点击命中也验证过：点 SoundCraft (60,52) 弹出菜单、点 CADCraft "Help" (1215,136) 弹出下拉。
+
+## 2026-10-26：八个移植同步到上游、重建、装机并重发
+
+`scripts/check-upstream.sh` 当时报告 8 个落后；本轮逐个同步、构建、安装并上传到
+`tzhazuma/artcraft-android` 的 `android-v1` release。目标 SHA 即下表「新」列，
+每个都已在 PA2573 上安装、冷启动并确认 Activity 在前台（进程存活、截图有真实界面）。
+
+| app | 旧 → 新 | 提交数 | versionName | 构建 | 装机/启动 | 资产 |
+|---|---|---|---|---|---|---|
+| cadcraft | b9f96d3 → 754b609 | 85 | 0.13.0 | ✅ | ✅ | `CADCraft-android-arm64.apk` |
+| craft-launcher | 0498d02 → 4ab652a（合入） | 28 | 0.8.1 | ✅ | ✅ | 新增 `ArtCraftLauncher-android-arm64.apk` |
+| deckcraft | 7be391a → 7d4c490 | 164 | 0.11.1 | ✅ | ✅ | `DeckCraft-android-arm64.apk` |
+| designcraft | c313c534 → 5024d61c | 220 | 0.13.0 | ✅ | ✅ | `DesignCraft-android-arm64.apk` |
+| gridcraft | 10bec748 → 3b65b9af | 115 | 0.12.1 | ✅ | ✅ | `GridCraft-android-arm64.apk` |
+| soundcraft | 93800e0 → 0a95b6d | 144 | 0.13.1 | ✅ | ✅ | `SoundCraft-android-arm64.apk` |
+| vectorcraft | f924c69f → f05c33cd | 195 | 0.17.0 | ✅ | ✅ | `VectorCraft-android-arm64.apk` |
+| wordcraft | cf2fe473 → 5dd5e8b3 | 243 | 0.11.0 | ✅ | ✅ | `WordCraft-android-arm64.apk` |
+
+### 这次踩到的坑（都已处理）
+
+- **eframe/egui 0.37**：`App::raw_input_hook` 多了一个 `&egui::Context` 参数。
+  cadcraft、deckcraft、soundcraft、wordcraft 的壳改为把 `ctx` 转发给内部 App；
+  designcraft/gridcraft/vectorcraft 仍是 0.36，不用改。
+- **`-laaudio` 链接失败**（soundcraft）：同步带入了 cpal 的 Android AAudio 后端，
+  该库在 NDK 里只从 API 26 起提供，而 cargo-ndk 默认 `--platform 21`。
+  构建时设 `CARGO_NDK_PLATFORM=31`（壳的 minSdk 31）即通过。
+- **craft-launcher 的唯一冲突** `crates/native/src/http.rs`：上游把 `root_certs()`
+  内联成 `PlatformVerifier` 并新增 `is_loopback()`。保留移植侧 Android
+  `/system/etc/security/cacerts` 覆盖，并同时保留上游新函数；`Http::new()` 仍调用
+  `root_certs()`。`android-port` 已合并且推到 `tzhazuma/craft-launcher`。
+- **菜单栏补丁**（cadcraft/soundcraft）重新对到新 `menus.rs`，并删掉补丁里过期的
+  `Cargo.lock` 段（现在只含 `menus.rs`）。两处都干净应用。
+- **Vivo 安装器没有 uiautomator 树**：全部用 `exec-out screencap` + 截图定位 + `input tap`。
+  当前 3096×2064 横屏布局下，有「身份验证」提示行时复选框在 y=1748、按钮 y≈1875，
+  没有时 y=1809 / y≈1936，x 都为 1305 / 1538。
+- **APK 里的 `.so` 新鲜度**：不靠时间戳，解包出 `lib/arm64-v8a/libmain.so` 后取
+  `.text` 段 SHA-256，与克隆里刚构建的 `libmain.so` 对比；8 个全部一致。
+- **`dist-repos/<app>-android/` 原本只有 craft-launcher 一份**：其余 7 个是从它复制
+  同一套通用 `scripts/`（脚本都接受 app 参数）再构建的，构建产物仍走 `out/`。
+
+### 注意：上游在本轮进行中又前进了
+
+完事后 `check-upstream.sh` 会再次报落后（cadcraft 1、craft-launcher 1、deckcraft 84、
+designcraft 62、soundcraft 1、vectorcraft 3；figcraft 也在列但本轮任务未包含）。
+这是上游在同步期间继续提交，不是本轮失败；上面表格里的「新」SHA 就是本轮实际
+同步到的提交。下次按同一流程继续即可。

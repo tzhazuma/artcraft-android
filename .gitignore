@@ -29,3 +29,6 @@ emulator.log
 
 # dmg/ and dist/ hold release APKs -- keep dist/ (small, useful) but not dmg/
 dmg/
+
+# Per-port release staging trees (local copies of the generic scripts).
+/dist-repos/*-android/
