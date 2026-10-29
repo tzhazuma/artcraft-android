@@ -18,10 +18,11 @@
 
 mod saf;
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
+use std::sync::{Arc, Mutex, PoisonError};
 
 use designcraft_engine::Session;
-use designcraft_ui_egui::{Services, DesignApp};
+use designcraft_ui_egui::{DesignApp, ImportRequest, ImportedFile, Inbox, Services};
 use winit::platform::android::activity::AndroidApp;
 
 /// How much to scale the desktop layout up on a phone.
@@ -62,16 +63,16 @@ fn android_main(app: AndroidApp) {
         std::fs::create_dir_all(dir).ok();
     }
 
-    // The SAF pickers answer asynchronously (Java starts the intent, this side polls a flag), but
-    // `Services::pick_open` is synchronous and runs on the UI thread. So the hook starts a
-    // background task and answers `None`, and the chosen paths come back through the app's own
-    // control channel -- which runs the *normal* `file.open` command, as the desktop does.
-    let (ctrl_tx, ctrl_rx) = std::sync::mpsc::channel::<designcraft_ui_egui::ControlRequest>();
+    // Designcraft 0.14 replaced the synchronous `pick_open`/`pick_save` closures with the async
+    // `Services` seam the browser build uses: `open_async` starts a picker and delivers the file
+    // through `inbox`; Save hands bytes to `download`. The SAF pickers answer asynchronously (Java
+    // starts the intent, this side polls a flag), which fits that seam exactly. The egui context is
+    // filled in once eframe has built it, so a worker can wake the app when a file arrives.
     let activity = app.activity_as_ptr() as usize;
+    let egui_ctx: Arc<Mutex<Option<egui::Context>>> = Arc::new(Mutex::new(None));
 
-    let mut session = Session::new();
-    let mut vc = DesignApp::new(session, services(ctrl_tx, activity, data_dir.clone()))
-        .with_control(ctrl_rx);
+    let session = Session::new();
+    let mut vc = DesignApp::new(session, services(activity, data_dir.clone(), Arc::clone(&egui_ctx)));
     // Preferences live in the app's private directory; `load_prefs`/`save_prefs` mirror the
     // desktop's ui.json / prefs.json pair.
     if let Some(dir) = &data_dir {
@@ -90,6 +91,7 @@ fn android_main(app: AndroidApp) {
         "Designcraft",
         options,
         Box::new(move |cc| {
+            *egui_ctx.lock().unwrap_or_else(PoisonError::into_inner) = Some(cc.egui_ctx.clone());
             setup_fonts(&cc.egui_ctx);
             Ok(Box::new(TouchShell::new(vc, data_dir)))
         }),
@@ -99,15 +101,11 @@ fn android_main(app: AndroidApp) {
     }
 }
 
-/// What the platform shell can do for the UI. Android has no `rfd` and no `arboard`, so every
-/// picker and clipboard hook is left `None`: the UI already handles that (its menus fall back to
-/// Designcraft's own clipboard, and an unavailable picker reports itself), which keeps the first
-/// port honest instead of half-wired.
-fn services(
-    ctrl: std::sync::mpsc::Sender<designcraft_ui_egui::ControlRequest>,
-    activity: usize,
-    data_dir: Option<PathBuf>,
-) -> Services {
+/// What the platform shell can do for the UI. Android has no `rfd` and no `arboard`, so the file
+/// seam is the Storage Access Framework (`src/saf.rs`) and the clipboard stays unavailable: the UI
+/// already handles that (its menus fall back to Designcraft's own clipboard, and an unavailable
+/// picker reports itself), which keeps the port honest instead of half-wired.
+fn services(activity: usize, data_dir: Option<PathBuf>, egui_ctx: Arc<Mutex<Option<egui::Context>>>) -> Services {
     let mut services = Services::default();
 
     /* Android-port: `read`/`write` default to None and every save ends in `io::write_to`, which is
@@ -122,85 +120,89 @@ fn services(
         std::fs::write(path, bytes).map_err(|e| format!("{path}: {e}"))
     }));
 
-    let open_ctrl = ctrl.clone();
+    // Files chosen in the SAF picker arrive here, with the request that asked for them, exactly as
+    // the browser build delivers them. The app drains the inbox on its next frame.
+    let inbox: Inbox = Arc::new(Mutex::new(Vec::new()));
+    services.inbox = Some(Arc::clone(&inbox));
+
     let open_dir = data_dir.clone();
-    services.pick_open = Some(Box::new(move |_purpose: &str| {
+    services.open_async = Some(Box::new(move |request: ImportRequest| {
         let Some(dir) = open_dir.clone() else {
             log::warn!("SAF: no data dir; cannot open the picker");
-            return None;
+            return;
         };
-        let ctrl = open_ctrl.clone();
+        let inbox = Arc::clone(&inbox);
+        let ctx = Arc::clone(&egui_ctx);
         std::thread::spawn(move || {
+            // pick_media copies the picked document into the app's own directory and returns the
+            // real path; the UI wants the bytes plus the file name.
             let paths = saf::pick_media(activity, &dir, std::time::Duration::from_secs(300));
             let Some(path) = paths.into_iter().next() else {
                 log::info!("SAF: nothing picked");
                 return;
             };
-            log::info!("SAF: opening {path}");
-            let (req, _rx) =
-                designcraft_ui_egui::ControlRequest::new("app.open", serde_json::json!({ "path": path }));
-            if ctrl.send(req).is_err() {
-                log::warn!("SAF: control channel closed; {path} was not opened");
+            let bytes = match std::fs::read(&path) {
+                Ok(bytes) => bytes,
+                Err(e) => {
+                    log::warn!("SAF: cannot read {path}: {e}");
+                    return;
+                }
+            };
+            let name = Path::new(&path)
+                .file_name()
+                .map(|n| n.to_string_lossy().into_owned())
+                .unwrap_or_else(|| "import".to_owned());
+            log::info!("SAF: delivering {name} ({} bytes) for {}", bytes.len(), request.purpose);
+            inbox
+                .lock()
+                .unwrap_or_else(PoisonError::into_inner)
+                .push(ImportedFile { request, name, bytes });
+            if let Some(ctx) = ctx.lock().unwrap_or_else(PoisonError::into_inner).as_ref() {
+                ctx.request_repaint();
             }
         });
-        None
     }));
 
-    // Two-stage, the way FilmCraft does it: hand back a path in the app's own export directory so it
-    // can write immediately, and run the SAF destination picker on a thread that waits for the file
-    // to appear and stop growing, then copies it out. Answering `None` here would make the app treat
-    // it as "no destination chosen" and write nothing at all.
+    // Save: Designcraft hands over the finished bytes (`download`), so write them into the app's
+    // export directory and run the SAF destination picker on a worker that copies the file out.
+    // Returning `Ok` means "the bytes are safe in the app's own storage"; a cancelled picker leaves
+    // the file in the export directory, which the log names.
     let save_dir = data_dir.clone();
-    services.pick_save = Some(Box::new(move |name: &str| {
-        let dir = save_dir.clone()?;
-        let requested: String = if name.is_empty() { "export".to_owned() } else { name.to_owned() };
-        let leaf: String = requested
-            .rsplit(['/', '\\'])
-            .next()
-            .filter(|s| !s.is_empty())
-            .unwrap_or("export")
-            .to_owned();
+    services.download = Some(Box::new(move |name: &str, bytes: &[u8]| {
+        let dir = save_dir.clone().ok_or_else(|| "no data dir".to_owned())?;
+        let leaf = leaf_name(name);
         let export_dir = dir.join("export");
-        if std::fs::create_dir_all(&export_dir).is_err() {
-            log::warn!("SAF: could not create {}", export_dir.display());
-            return None;
-        }
-        let scratch_string = export_dir.join(&leaf).to_string_lossy().into_owned();
-        log::info!("SAF: save dialog -> {scratch_string}");
+        std::fs::create_dir_all(&export_dir).map_err(|e| format!("{}: {e}", export_dir.display()))?;
+        let scratch = export_dir.join(&leaf);
+        std::fs::write(&scratch, bytes).map_err(|e| format!("{}: {e}", scratch.display()))?;
+        let scratch_string = scratch.to_string_lossy().into_owned();
+        log::info!("SAF: saving {leaf} ({} bytes) -> {scratch_string}", bytes.len());
 
-        let publish_path = scratch_string.clone();
+        let publish_path = scratch_string;
         std::thread::spawn(move || {
             if !saf::pick_save(activity, &leaf, std::time::Duration::from_secs(300)) {
                 log::info!("SAF: no destination chosen; the file stays at {publish_path}");
                 return;
             }
-            let deadline = std::time::Instant::now() + std::time::Duration::from_secs(900);
-            let (mut size, mut stable_since) = (0u64, std::time::Instant::now());
-            loop {
-                let now = std::fs::metadata(&publish_path).map(|m| m.len()).unwrap_or(0);
-                if now != size {
-                    size = now;
-                    stable_since = std::time::Instant::now();
-                } else if size > 0 && stable_since.elapsed() > std::time::Duration::from_millis(1500) {
-                    break;
-                }
-                if std::time::Instant::now() > deadline {
-                    log::warn!("SAF: giving up on {publish_path} (nothing was written)");
-                    return;
-                }
-                std::thread::sleep(std::time::Duration::from_millis(400));
-            }
             if saf::publish(activity, &publish_path) {
-                log::info!("SAF: published {publish_path} ({size} bytes)");
+                log::info!("SAF: published {publish_path}");
             } else {
                 log::warn!("SAF: publishing {publish_path} failed; the file stays in the export directory");
             }
         });
-
-        Some(scratch_string)
+        Ok(())
     }));
 
     services
+}
+
+/// The last path component of `name`, or `export` for an empty one.
+fn leaf_name(name: &str) -> String {
+    name.rsplit(['/', '\\'])
+        .next()
+        .filter(|s| !s.is_empty())
+        .unwrap_or("export")
+        .to_owned()
 }
 
 /// Designcraft's own preferences, in the app's private data directory.
@@ -301,8 +303,8 @@ impl eframe::App for TouchShell {
         let _ = frame;
     }
 
-    fn raw_input_hook(&mut self, _ctx: &egui::Context, raw: &mut egui::RawInput) {
-        self.app.raw_input_hook(raw);
+    fn raw_input_hook(&mut self, ctx: &egui::Context, raw: &mut egui::RawInput) {
+        self.app.raw_input_hook(ctx, raw);
     }
 
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {

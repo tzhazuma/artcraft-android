@@ -1,0 +1,27 @@
+[package]
+name = "rfd"
+version = "0.17.2"
+edition = "2021"
+license = "MIT"
+description = "Android build shim for rfd: the real crate has no Android backend, so every dialog is a no-op. The ArtCraft ports provide real file picking through the Storage Access Framework (see the port's src/saf.rs), not through rfd."
+publish = false
+
+# Its own workspace root: the stub lives under ports/, inside no workspace of its own, and a bare
+# path package there would otherwise make cargo walk up into ports/designcraft-android/Cargo.toml
+# (a package whose `version.workspace = true` has no workspace root) and fail to parse it.
+[workspace]
+
+# The versions the apps already pin. Only what craft-dialogs' Android build graph needs.
+[dependencies]
+raw-window-handle = "0.6.2"
+
+# Feature names requested by dependents (craft-dialogs asks for xdg-portal). All empty: this
+# crate never links a desktop dialog backend.
+[features]
+default = []
+xdg-portal = []
+gtk3 = []
+wayland = []
+common-controls-v6 = []
+async-std = []
+tokio = []
