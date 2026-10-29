@@ -282,11 +282,16 @@ fn services(
             });
             None
         })),
-        pick_save: Some(Box::new(move |purpose: &str, default: &str| {
+        pick_save: Some(Box::new(move |purpose: &str, default: &std::path::Path| {
             // Two-stage, like the other apps: answer with a real path so the app writes, then the
             // picker thread waits for the file and publishes it. `default` is the suggested name.
+            // 0.14 changed this seam from `(&str, &str) -> Option<String>` to
+            // `(&str, &Path) -> Option<PathBuf>`, so the suggestion is read out of the path.
             let dir = save_dir.clone()?;
-            let requested: String = if default.is_empty() { "export".to_owned() } else { default.to_owned() };
+            let requested: String = match default.to_str() {
+                Some(s) if !s.is_empty() => s.to_owned(),
+                _ => "export".to_owned(),
+            };
             let leaf: String = requested
                 .rsplit(['/', '\\'])
                 .next()
@@ -330,7 +335,7 @@ fn services(
                 }
             });
 
-            Some(scratch_string)
+            Some(std::path::PathBuf::from(scratch_string))
         })),
         pick_folder: None,
     }
