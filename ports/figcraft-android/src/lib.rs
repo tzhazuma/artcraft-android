@@ -180,9 +180,10 @@ impl TouchShell {
 
 impl eframe::App for TouchShell {
     fn logic(&mut self, ctx: &egui::Context, frame: &mut eframe::Frame) {
-        self.app.logic(ctx);
-        // The desktop shell keeps the window alive while a print job runs; on Android there is no
-        // print backend, so only the close-request guard is worth mirroring.
+        // FigCraft 0.12.1 made `FigApp::logic` private: the desktop shell now runs the logic-only
+        // work through `windows::guard(.., background_tick)` (which catches UI panics and applies
+        // the automation file confinement), and `FigApp::ui` does the drawing. Mirror that.
+        figcraft_ui_egui::windows::guard(&mut self.app, ctx, |fig| fig.background_tick(ctx));
         let _ = frame;
     }
 
