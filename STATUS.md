@@ -1717,3 +1717,62 @@ let bar_height = 22.0_f32.max(ui.spacing().interact_size.y);         // 桌面�
 designcraft 62、soundcraft 1、vectorcraft 3；figcraft 也在列但本轮任务未包含）。
 这是上游在同步期间继续提交，不是本轮失败；上面表格里的「新」SHA 就是本轮实际
 同步到的提交。下次按同一流程继续即可。
+
+## 2026-10-29：四个半同步的移植重做干净、重建、装机并重发
+
+上一轮 agent 在 fast-forward 和恢复 overlay 的中途死掉，四个 clone 处于未知状态。本轮
+先逐个确认实际状态，再按「干净重做」处理：所有 overlay 都以 `ports/<app>-android/` 为准
+重新 rsync，旧 stash 导出到 `logs/stash-*.patch` 后清空。
+
+| app | 起始 HEAD（发现时） | 同步到 | 提交数 | versionName | 构建 | 装机/启动 | 资产 |
+|---|---|---|---|---|---|---|---|
+| craft-launcher | 3b8e12f（android-port，clean，1 stash） | b827fed 合入 android-port → e95f636 | 19 | 0.9.0 | ✅ | ✅ | `ArtCraftLauncher-android-arm64.apk` |
+| deckcraft | ee875abf（dirty 2，2 stashes） | f893f6af | 31 | 0.12.0 | ✅ | ✅ | `DeckCraft-android-arm64.apk` |
+| designcraft | 935b817b（staged overlay，3 stashes） | 855d6063 | 44 | 0.14.0 | ✅ | ✅ | `DesignCraft-android-arm64.apk` |
+| figcraft | 63d92687（untracked overlay，1 stash） | cabfc9f8 | 369 | 0.12.1 | ✅ | ✅ | `FigCraft-android-arm64.apk` |
+
+四个 APK 都装到真机 PA2573（`10.20.103.175:5555`，已解锁）并冷启动确认：Activity 在前台、
+进程存活、logcat 无 panic、截图有真实界面。APK 里 `lib/arm64-v8a/libmain.so` 的 `.text`
+段 SHA-256 与 clone 里刚构建的 `.so` 逐一比对，四个全部一致。
+
+### 本轮踩到的新坑（都已处理）
+
+- **craft-launcher：`make-shell.sh` 会用通用模板覆盖 launcher 专用壳**。模板重新生成会
+  删掉 `INTERNET`/`QUERY_ALL_PACKAGES`/`<queries>` 权限、`MainActivity` 的
+  `installed-apps.txt` 与 `launch-request.txt` 桥（112 行）以及 `debuggable true`。
+  正确做法：`git checkout -- apps/craft-launcher-android/android` 恢复已提交的壳，只
+  `sed` 版本号到 0.9.0，再 `build-apk.sh`。第一次用模板重建的 APK 已作废。
+- **craft-launcher 合并冲突** `crates/core/src/catalog.rs`：保留移植侧的
+  `release_repo()`（RELEASE_REPO 决定 release 来源），同时采用上游新的 `website()` 文档注释。
+- **designcraft：`rfd` 在 Android 上根本不编译**。0.14.0 经 craft-libs 的
+  `craft-dialogs` 无条件依赖 `rfd 0.17.2`，而 rfd 只有 macOS/Windows/Linux/BSD 后端：
+  `the trait bound FileDialog: AsyncFilePickerDialogImpl is not satisfied`。
+  处理：`ports/designcraft-android/upstream/rfd-android/` 是接口同形的 no-op rfd（所有
+  对话框立即返回 Cancelled；真文件选择仍走 SAF），
+  `upstream/setup-rfd-stub.sh` 幂等地在 clone 根 `[patch.crates-io]` 里加一行
+  `rfd = { path = "../../ports/designcraft-android/upstream/rfd-android" }`。
+- **designcraft 0.14 换了 `Services` 接口**：`pick_open`/`pick_save` 闭包没了，改成浏览器
+  那套异步 seam —— `open_async(ImportRequest)` + `inbox: Arc<Mutex<Vec<ImportedFile>>>`、
+  Save 走 `download(name, bytes)`。移植壳已按此重写：SAF 选文件在线程里跑完把 bytes
+  塞进 inbox 并 `request_repaint()`；`download` 把 bytes 写进 `files/export/` 再起线程跑
+  SAF 另存对话框。`read`/`write` 仍用 std::fs。
+- **figcraft：`FigApp::logic` 已私有化**。0.12.1 的桌面壳改为
+  `windows::guard(fig, ctx, |fig| fig.background_tick(ctx))`，`FigApp::ui` 负责绘制；
+  移植壳照抄。`raw_input_hook` 保持空实现（FigApp 没有公开的 hook 可转发，和 0.10.0 一样）。
+- **Vivo 安装器这次有 uiautomator 树**（`com.android.packageinstaller`），直接
+  `uiautomator dump` 读 bounds 比截图目测可靠：复选框中心 (1547, 1748)、继续安装
+  (1547, 1875)（有「身份验证」footer 时）；无 footer 时 y=1809 / 1936。点完复选框后
+  某些包会自动继续，pm install 随即返回 Success。
+- **旧 stash 不可信**：deckcraft/designcraft/figcraft 的 stash 里的 overlay 与 `ports/`
+  内容一致（diff 为空），craft-launcher 的 stash 是 0.4.1 时代的旧上游改动，已在
+  android-port 上重新实现。全部导出后 `git stash clear`。
+
+### 未处理（不属于这四个 app）
+
+- `ports/gridcraft-android/src/lib.rs` 与 `ports/vectorcraft-android/src/lib.rs` 的
+  `raw_input_hook` ctx 修复仍未提交。核对过：这两个 app 发布时上游还是 egui **0.36**
+  （`Cargo.toml` 里 `egui = "0.36"`），发布出去的 APK 没有坏；这两处改动是给**下一次**
+  同步到 0.37 用的，留给负责 gridcraft/vectorcraft 的轮次提交。
+- `src/cadcraft`、`src/gridcraft`、`src/soundcraft`、`src/vectorcraft`、`src/wordcraft`
+  的 gitlink 仍是上一轮 fast-forward 留下的脏状态，不在本轮四个 app 范围内。
+
