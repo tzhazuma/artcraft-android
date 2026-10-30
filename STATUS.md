@@ -10,6 +10,23 @@
 
 ---
 
+---
+
+## Install pending
+
+APKs that are built, committed and published but **not installed and launched on the PA2573**. An
+APK in this list is a weaker claim than one that has been opened: the build and the `.so` freshness
+check passed, but nothing has run on hardware.
+
+The scheduled sync adds a line here whenever the phone is unreachable or locked (it needs a
+two-finger swipe up, which `adb shell input swipe` cannot synthesise). Remove the line once that
+version is installed and verified.
+
+| app | version | apk | date |
+|---|---|---|---|
+
+_(empty — every published APK has been installed and launched)_
+
 ## 0. 一句话结论
 
 GridCraft 的 Android 移植**编译链路已完全打通**：Rust `cdylib` → `libmain.so`(34.7 MB) → APK(31.0 MB)，
