@@ -24,7 +24,8 @@ version is installed and verified.
 
 | app | version | apk | date |
 |---|---|---|---|
-| craft-launcher | 0.10.0 | `out/ArtCraftLauncher-0.10.0-android-arm64.apk` | 2026-10-30 |
+
+_(empty — every published APK has been installed and launched)_
 
 ## 0. 一句话结论
 
