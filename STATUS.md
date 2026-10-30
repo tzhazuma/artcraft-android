@@ -12,6 +12,27 @@
 
 ---
 
+## Community apps
+
+The launcher's catalog is the authority on what the suite contains. Official apps live under
+`storytold/*`; **community apps** come from other GitHub accounts and are listed with
+`AppKind::Community`. The port pipeline grew up around `storytold/*` and never looked at that
+catalog, so SolidCraft sat in the launcher as "unavailable" with nobody realising it had never been
+ported.
+
+`scripts/check-community.sh` closes that gap: it reads the catalog, reports each community app
+against `ports/`, and exits 10 when one has no Android port. Run it alongside `check-version.sh`.
+
+| app | upstream | android package | state |
+|---|---|---|---|
+| SolidCraft | `tangency-labs/solidcraft` | `ai.storyteller.solidcraft` | port in progress |
+
+A community app's declared bundle is usually not `ai.storyteller.*`, and the Android activity only
+probes names under that prefix. When porting one, ship it under a `former_bundles` id if it has one
+(SolidCraft shipped as `ai.storyteller.solidcraft`), and add the mapping to `ANDROID_PACKAGE_IDS`,
+the probe array in `MainActivity.java` and the manifest `<queries>` block — otherwise the launcher
+will never see it no matter what is installed.
+
 ## Install pending
 
 APKs that are built, committed and published but **not installed and launched on the PA2573**. An
