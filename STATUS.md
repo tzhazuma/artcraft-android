@@ -45,8 +45,11 @@ version is installed and verified.
 
 | app | version | apk | date |
 |---|---|---|---|
+| SolidCraft | 0.28.0 | `out/SolidCraft-0.28.0-android-arm64.apk` (published as `SolidCraft-android-arm64.apk`) | 2026-11-01 |
 
-_(empty — every published APK has been installed and launched)_
+SolidCraft is the only one left: the phone locked while the 0.28.0 APK was building and then
+dropped off adb (`device offline`, black screen, `deviceLocked=1`), so the install could not run.
+Everything else in this sync is installed and cold-launched; see the 2026-10-31 section at the end.
 
 ## 0. 一句话结论
 
@@ -1988,3 +1991,74 @@ solidcraft-android: first frame laid out, the UI is up
 再构建一次会把机器和其他 agent 一起卡死，所以停在「已定位、未修完」。
 
 **这不是「移植失败」**：渲染、内核、UI、文件、GPU 管线全部正常，只有中文文字缺字形。
+
+---
+
+## 2026-10-31：十个应用按「上游版本变了」同步、重建、装机并重发
+
+`scripts/check-version.sh` 在任务开始时报的不止简报里的六个：它多报了 **solidcraft 0.28.0、
+soundcraft 0.15.0、vectorcraft 0.19.0、wordcraft 0.13.2**（简报是几分钟前的快照，上游又动了）。
+Lead 确认十个全归这一轮，于是十个全部做完；`check-community.sh` 仍只有 SolidCraft 一个社区应用，
+已 ported，没有新增。
+
+| app | 旧 → 新 | 构建 | 真机（PA2573） | 资产 |
+|---|---|---|---|---|
+| cadcraft | 0.14.0 → 0.15.1 | libmain 44,509,848 B；APK 38,420,308 B | 装上、冷启动 pid 11035、焦点正确 | `CADCraft-android-arm64.apk` |
+| craft-launcher | 0.10.1（versionName）→ 0.11.1 | libmain 23,305,344 B；APK 26,064,378 B | 装上、冷启动 pid 12812，自己的网格里显示 CADCraft 0.15.1 | `ArtCraftLauncher-android-arm64.apk` |
+| deckcraft | 0.12.0 → 0.13.1 | libmain 60,861,192 B；APK 50,601,684 B | 装上、冷启动 pid 15103 | `DeckCraft-android-arm64.apk` |
+| designcraft | 0.14.0 → 0.15.2 | libmain 102,705,224 B；APK 82,881,464 B | 装上、冷启动 pid 19417 | `DesignCraft-android-arm64.apk` |
+| figcraft | 0.12.1 → 0.13.1 | libmain 82,905,568 B；APK 64,757,924 B | 装上、冷启动 pid 21188 | `FigCraft-android-arm64.apk` |
+| gridcraft | 0.13.0 → 0.14.2 | libmain 43,824,152 B；APK 37,639,268 B | 装上、冷启动 pid 23515 | `GridCraft-android-arm64.apk` |
+| soundcraft | 0.14.0 → 0.15.0 | libmain 38,443,880 B；APK 33,381,744 B | 装上、冷启动 pid 24695 | `SoundCraft-android-arm64.apk` |
+| vectorcraft | 0.18.0 → 0.19.0 | libmain 113,416,824 B；APK 100,376,320 B | 装上、冷启动 pid 32555 | `VectorCraft-android-arm64.apk` |
+| wordcraft | 0.12.0 → 0.13.2 | libmain 80,331,152 B；APK 65,661,008 B | 装上、冷启动 pid 3204 | `WordCraft-android-arm64.apk` |
+| solidcraft | 0.27.1 → 0.28.0 | libmain 743,045,160 B（打包 strip 到 125,384,888 B）；APK 131,683,028 B | **未装**：手机锁屏后掉线，见 `## Install pending` | `SolidCraft-android-arm64.apk` |
+
+每个 APK 都过了 `zipalign -c -P 16`，并且解包出的 `lib/arm64-v8a/libmain.so` 的 `.text`
+SHA-256 与克隆里刚构建的那份一致（文件大小不同是打包 strip，不能按大小比）：
+
+| app | `.text` sha256 前 16 位 |
+|---|---|
+| cadcraft | `353fed080f706eed` |
+| craft-launcher | `6793d42a685432bd` |
+| deckcraft | `02183957f62890fa` |
+| designcraft | `a5ef99ca50e85962` |
+| figcraft | `524a2e24352bfb06` |
+| gridcraft | `516efe0745b83f21` |
+| soundcraft | `5e7df281507fec13` |
+| vectorcraft | `5c42729baffe5578` |
+| wordcraft | `e554d77e4458264f` |
+| solidcraft | `f129c301a78381c6` |
+
+### 这一轮的新事实 / 坑
+
+- **craft-launcher 这次合并没有冲突**。`main` 从 3fad1d6 快进到 68eeee9（43 commits）再并进
+  `android-port`，`Os::Android`/`PackageKind::Apk`、`crates/native/src/http.rs` 的
+  `root_certs()`（Android `/system/etc/security/cacerts`）与上游新的 `is_loopback()`、
+  SolidCraft 映射、`INTERNET`/`QUERY_ALL_PACKAGES`/`<queries>` 全部原样保留；0.10.1 的
+  SolidCraft 检测提交也在。没有跑 `make-shell.sh`。推到 **fork**（`origin` 是上游，403）。
+- **`dist-repos/figcraft-android/` 原来不存在**（简报假设每个 app 都有）。它的 `scripts/`
+  是从 `gridcraft-android/scripts` 复制的一套通用脚本；`dist-repos/*-android/` 在
+  `.gitignore` 里，所以不用提交。
+- **磁盘又满了一次**：vectorcraft 的 release target 把盘吃到 0，Gradle 在
+  `mergeReleaseNativeDebugMetadata` / `lintVitalAnalyzeRelease` 报 `No space left on device`。
+  删掉 Rust target 后重跑就过。每个 app 成功后都删 `target` 和 `app/build`；`out/` 里旧的
+  版本化 APK 也清了一批（发布物在 Release 和 `dist/`，不靠 `out/`）。
+- **`CARGO_NDK_PLATFORM=31`** 对 soundcraft 是必需的（cpal 的 AAudio 从 API 26 起），
+  这一轮对所有 app 都显式带上，写进了调用命令而不是 `env.sh`。
+- **设备地址漂移**：`172.20.10.4:35725` 在中午后拒绝连接，但 mDNS 传输
+  `adb-KZDQSSJZW4AURCJN-kXphPk._adb-tls-connect._tcp` 一直在线，后续安装全走它
+  （`~/install-apk.sh` 也会先断开 mDNS 只留一个传输；直接用 mDNS serial 更省事）。
+- **vivo 安装器两套布局都碰到了**：有「身份验证」footer 时复选框 (1547,1748)、继续安装
+  (1547,1875)；没有时 (1547,1809)/(1547,1936)。`uiautomator dump` 这次一直有树，按文本找
+  bounds 比截图目测稳；部分包点完复选框直接 Success，不再需要点按钮。
+- **SolidCraft 的 0.28.0**：上游合并没有冲突；`ports/solidcraft-android/src/lib.rs` 保持
+  Lead 的 CJK 修复原样（构建前后 sha256 都是 `0a9e617b3ce7c3aa`），只跑了
+  `patches/solidcraft-android/upstream/setup-arboard-stub.sh` 和 versionName 提升。
+  它的 release `.so` 743 MB（`debug=line-tables-only`），APK 打包时 strip 到 125 MB。
+  **CJK 日志行没拿到**：手机在 APK 构建期间锁屏、随后 `device offline`，
+  所以「中文是否真的不再是 `◻`」仍未在真机验证——装的时候先看
+  `adb logcat -d | grep "CJK status"`，再切到简体中文截图。
+- **手机锁屏时 `wm dismiss-keyguard` 这次没解开**（`deviceLocked=1` 一直是 1，截图全黑），
+  和上一轮「能解开」的结论不一致；可能这次是真正的锁屏（需要 PIN/双指上滑）。
+  按简报的规则没有停等：APK 照建照发，SolidCraft 记进 `## Install pending`。
