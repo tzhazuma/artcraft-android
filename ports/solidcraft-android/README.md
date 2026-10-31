@@ -81,6 +81,17 @@ depth of its own because the scene is drawn offscreen and blitted, exactly as on
 
 ## Known gaps
 
+* **CJK text draws as `◻`.** Latin, digits and shortcuts render normally; every Chinese/Japanese/
+  Korean character is the replacement square. The device faces are found, parsed and installed
+  (`/system/fonts/NotoSansCJK-Regular.ttc` face 2 for Simplified Chinese, `DroidSansFallbackBBK.ttf`
+  as a TrueType fallback), and egui's own `Fonts::has_glyph` reports the glyph is there — but the
+  app's text still lays out to the replacement character. The check in [`TouchShell::install_cjk`]
+  looks at the `Proportional` family only; SolidCraft's body text uses the
+  `FontFamily::Name("ui-medium"/"ui-semibold"/"ui-bold")` families, so the next step is to run that
+  check per family and put the CJK face first in whichever family lacks it (`apply_cjk(ctx, true)`
+  already does the placement, it is just never reached because the `Proportional` check passes).
+  See STATUS.md for the logcat evidence.
+
 * **Density.** The layout is the desktop's: a workspace ribbon, a browser tree, a viewport with an
   on-screen navigation bar, a command dialog column. A phone in landscape is ~914×411 pt where the
   layout is designed for ≥960 pt wide. Enlarging the touch targets is the only change made; a real

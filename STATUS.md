@@ -1952,3 +1952,39 @@ solidcraft-android: first frame laid out, the UI is up
   「egui 用上了字体」是两件事，`Fonts::has_glyph()` 才是判据。
 - **`ctx.set_fonts()` 在帧内调用是下一帧生效**，所以装完字体立刻检查 `has_glyph` 一定看到旧值，
   要留 1–2 帧。壳里用 `cjk_settle` 计数。
+
+### 遗留缺口：CJK 文字显示为 `◻`（拉丁文正常）
+
+**现状（诚实结论）**：英文 UI 完全正常（起始页、模型树、特征时间线、三维视口、偏好设置对话框
+全部可读可点）；**中文界面里每个汉字都是 `◻`**，拉丁字母、数字、快捷键（`Ctrl+N`、`v0.27.1`）
+照常渲染。所以这不是「没有可用字体」，而是**只有 CJK 缺字**。
+
+排查到的事实（都有 logcat 证据）：
+
+1. 设备上的字体**能读、能解析、有字形**：
+   `/system/fonts/NotoSansCJK-Regular.ttc: 32355424 bytes, face 2, 65535 glyphs, CJK yes`；
+   `DroidSansFallbackBBK.ttf: 42234356 bytes, face 0, 29609 glyphs, CJK yes`。
+   注意 `.ttc` 的 **face 2** 才是简体中文那一张（face 0 是日文），`egui::FontData` 的 `index`
+   字段必须设成它，否则拿到的是日文字形。
+2. 壳把字体装进 `FontDefinitions` 之后，**egui 自己的字形查找是成功的**：
+   `frame 1: present=true ... has_glyph=true`（`ctx.fonts_mut(|f| f.has_glyph(&FontId::proportional(16.0), '简'))`）。
+3. 但**屏幕仍然画 `◻`**，且刷新、重开、`pm clear` 之后都一样。
+
+`◻` 不是空白，是 egui 0.36 的**替换字符**：`epaint::CachedFamily::new` 里
+`PRIMARY_REPLACEMENT_CHAR = '◻'`，当「字体族里没有任何一张脸有这个字」时按这个字排版。
+也就是说：**我查 Proportional 族时能解析到字形，应用真正排版时却落到替换字符上**。
+
+下一步要做的（已经写在壳里、但被上面第 2 点挡住没触发）：
+- 把 `has_glyph` 的检查**按族逐个做**（`Proportional`、`Monospace`、`ui-medium`、`ui-semibold`、
+  `ui-bold`），而不是只查 Proportional。SolidCraft 的正文用的是
+  `FontFamily::Name("ui-medium")` 这几个族（`fonts::medium()/semibold()/bold()`），
+  所以「Proportional 有字形」不等于「正文族有字形」。
+- 一旦某个族查不到，就把 CJK 脸**插到该族最前面**（壳里 `apply_cjk(ctx, first=true)` 已经实现，
+  现在只在 `has_glyph` 为假时才走，而它一直为真所以没走）。
+- 再验证：如果插到最前仍然 `◻`，那就是 epaint 的栅格化/图集问题，不是选择问题。
+
+为什么这一轮没做完：`src/solidcraft/target/` 被别的轮次清掉了，重新全量 release 构建要
+20 分钟 + 约 8–10 GB 临时空间，而当时磁盘只剩 2.8–5.4 GB（926 GB 的盘已经 100%）。
+再构建一次会把机器和其他 agent 一起卡死，所以停在「已定位、未修完」。
+
+**这不是「移植失败」**：渲染、内核、UI、文件、GPU 管线全部正常，只有中文文字缺字形。

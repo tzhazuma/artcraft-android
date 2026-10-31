@@ -433,6 +433,10 @@ impl TouchShell {
         if !present {
             // The UI replaced its font set (a language or interface-font change): start over.
             self.cjk_state = CjkState::Idle;
+        } else if matches!(self.cjk_state, CjkState::Works) && !self.cjk_works(ctx) {
+            // The face survived but the UI has since added a family that does not consult it, or
+            // reordered one. `present` alone cannot see that; only the per-family probe can.
+            self.cjk_state = CjkState::Appended;
         }
         if self.cjk_settle > 0 {
             self.cjk_settle -= 1;
@@ -477,7 +481,17 @@ impl TouchShell {
 
     /// Whether egui's own glyph lookup finds a Chinese character in the proportional family.
     fn cjk_works(&self, ctx: &egui::Context) -> bool {
-        ctx.fonts_mut(|f| f.has_glyph(&egui::FontId::proportional(16.0), '简'))
+        // Every family, not just `Proportional`. SolidCraft's body text is laid out with the named
+        // families `ui-medium` / `ui-semibold` / `ui-bold`, and a probe that only asks the
+        // proportional family answers "the glyph is there" while the screen still draws `◻` --
+        // which is exactly why the promote path below never fired. A family that cannot draw the
+        // character is a failure even when another one can.
+        ctx.fonts_mut(|f| {
+            let families: Vec<egui::FontFamily> = f.definitions().families.keys().cloned().collect();
+            families.into_iter().all(|family| {
+                f.has_glyph(&egui::FontId::new(16.0, family), '简')
+            })
+        })
     }
 
     /// Put the device's CJK face into the current font definitions, first or last in each family.
