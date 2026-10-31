@@ -45,7 +45,6 @@ version is installed and verified.
 
 | app | version | apk | date |
 |---|---|---|---|
-| solidcraft | 0.28.0 | `out/SolidCraft-0.28.0-android-arm64.apk` | 2026-11-01 |---|
 | SolidCraft | 0.28.0 | `out/SolidCraft-0.28.0-android-arm64.apk` (published as `SolidCraft-android-arm64.apk`) | 2026-11-01 |
 
 SolidCraft is the only one left: the phone locked while the 0.28.0 APK was building and then
