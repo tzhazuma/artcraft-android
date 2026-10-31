@@ -1814,3 +1814,141 @@ designcraft 62、soundcraft 1、vectorcraft 3；figcraft 也在列但本轮任�
 - `src/cadcraft`、`src/gridcraft`、`src/soundcraft`、`src/vectorcraft`、`src/wordcraft`
   的 gitlink 仍是上一轮 fast-forward 留下的脏状态，不在本轮四个 app 范围内。
 
+
+---
+
+## 2026-10-30：SolidCraft 0.27.1 —— 第 14 个移植（新移植，不是同步）
+
+上游 `tangency-labs/solidcraft`（社区应用，不在 `storytold` 下），0.27.1，Rust，clone 243 MB。
+这是目前最大的一次移植：`crates/ui-egui` 单库 **203,802 行**，整个 workspace **600 个包**，
+而且是**自研 GPU 渲染器**（`solidcraft-gpu` + `bundled-render-library` + `raytrace-cpu`），
+不是其它 Craft 应用那种「eframe 默认画布 + 2D」。
+
+**结论：能移植，而且是完整可用的移植**——三维视口、模型树、特征时间线、偏好设置对话框都在
+真机上跑起来了，GPU 缩略图和视口渲染都是真的（不是「chrome 有、视口空」）。
+
+### 包名：`ai.storyteller.solidcraft`，不是上游的 `io.tangencylabs.solidcraft`
+
+上游声明的 bundle 是 `io.tangencylabs.solidcraft`，但 `former_bundles` 里有
+`ai.storyteller.solidcraft`。ArtCraft Launcher 用 `CraftApp::android_bundle_id()` 匹配已安装
+应用（`ANDROID_PACKAGE_IDS` 之外一律返回 `bundle_id()`），而 launcher 的 Java 只探测
+`ai.storyteller.` 开头的名字。用上游 id 装出来 launcher **完全看不见**。
+实测：装上后 launcher 立刻列出 SolidCraft 并打开详情页。
+
+### 可行性探测（先做，再动手）
+
+```
+cargo +stable ndk -t arm64-v8a check -p solidcraft-engine     # 2m58s，0 error
+cargo +stable ndk -t arm64-v8a check -p solidcraft-ui-egui    # 25s，0 error（修掉 arboard 之后）
+```
+
+**几何内核（truck）、草图求解器、文档模型、IO、渲染器、整个 egui 前端，全部原样编过。**
+唯一编不过的是 `arboard`。
+
+### 唯一的阻塞：`arboard` 没有 Android 后端
+
+`solidcraft-ui-egui` 在 `cfg(not(target_arch = "wasm32"))` 下依赖 `arboard`（系统剪贴板），
+而 arboard 3.6 的 `src/platform/mod.rs` 只给 Windows / macOS / X11-Wayland 选后端，Android 上
+`get` / `set_text` 都不存在：
+
+```
+error[E0425]: cannot find function `get` in module `platform`
+```
+
+处理：`patches/solidcraft-android/upstream/arboard-android/` 是接口同形的 no-op shim
+（`Clipboard::new/get_text/get_image/get/Get::{text,image,file_list,html}/set_text/set_image/clear`），
+所有读操作返回 `ContentNotAvailable`。`upstream/setup-arboard-stub.sh` 幂等地往 clone 根
+`[patch.crates-io]` 加一行；`build-so.sh` 每次构建前自动跑它。
+**注意 shim 的 `Clipboard::get()` 必须返回 `Get<'_>` 而不是 `Result`**——第一版写错了，
+调用点是 `c.get().file_list()`，直接报 `no method named file_list found for Result`。
+
+应用内的剪切/复制/粘贴不受影响（那是 egui 自己的剪贴板）；跨应用粘贴没有。
+
+### 移植壳 `ports/solidcraft-android/`
+
+桌面壳 `apps/solidcraft` 的入口是 `SolveApp::new(Session::default(), services(cc, folder))`，
+和其它 Craft 应用同形，所以壳也同形：
+
+| 桌面（`apps/solidcraft`） | Android（移植壳） |
+|---|---|
+| `std::env::args()`（设计文件、`--sample`、`--safe-mode`、`--control`） | 无：启动到起始页 |
+| `settings_dir()` 走 `HOME`/XDG | `SOLIDCRAFT_SETTINGS_DIR=<files>/settings` |
+| `crash::default_dir` / `recovery::default_dir` | `SOLIDCRAFT_RECOVERY_DIR=<files>/recovery`（崩溃报告在旁边） |
+| `rfd` 文件对话框 | SAF（`ACTION_OPEN_DOCUMENT` / `ACTION_CREATE_DOCUMENT`），选中的文档复制进 `<files>/import/`，交给引擎的是真实路径 |
+| `arboard` | no-op shim |
+| `keyring`、`ureq` 更新检查、control server、EasyPrint 上传、agent chat 的 HTTP | `Services` 全部留 `None`，UI 自己就不显示这些入口 |
+| 3D 鼠标、原生菜单、崩溃处理器、macOS 打开文档事件、X11/Wayland | 不编译 |
+| 系统字体扫描（Windows/macOS/Linux 目录） | `SOLIDCRAFT_FONT_DIRS=/system/fonts` |
+| 1600×1000 窗口、鼠标、hover | 触摸目标 36 pt；`sensorLandscape`（横屏 1238×826 pt，比桌面最小宽度 960 还宽） |
+
+视口是桌面那套：`SolveApp::set_wgpu_split(rs, 24, 8, 4)` 装场景管线（引擎自己会在格式不支持
+多重采样时降到 1×），`gpu::install_picture_renderer(rs)` 让缩略图也走 GPU，窗口 pass 本身没有
+深度缓冲（场景离屏画完再 blit），和桌面完全一致。
+
+`services()` 的 SAF 实现要注意：`FilePickerFuture` 是 **Future**，`file_picker::tick` 每帧 poll
+一次，所以选文件必须丢到后台线程（Java 那边 `startActivityForResult` + 轮询 flag），future 只
+盯一个 slot，**不能**在 UI 线程里阻塞等用户。保存是反过来：Java 拿到目标 URI，Rust 给引擎一个
+`<files>/export/<name>` 的路径，后台线程等文件写完（大小两次相同）再 `safPublish` 复制过去。
+
+### 构建
+
+```
+bash dist-repos/solidcraft-android/scripts/build-so.sh  solidcraft     # 19m51s，--release
+bash dist-repos/solidcraft-android/scripts/build-apk.sh solidcraft 0.27.1
+```
+
+| 产物 | 大小 |
+|---|---|
+| `src/solidcraft/apps/solidcraft-android/jniLibs/arm64-v8a/libmain.so` | 724,756,128 B |
+| `out/SolidCraft-0.27.1-android-arm64.apk` | 128,235,748 B |
+
+.so 这么大是上游 `[profile.release] debug = "line-tables-only"` 加上 31 MB 的
+`bundled-render-library` 资产；**APK 不跟着大**，因为 AGP 会把 debug 段剥掉（724 MB → 122 MB）。
+上游**没有** `[profile.dist]`，所以 `build-so.sh` 的 dist-profile 分支在这里不触发，走 `--release`。
+
+`.text` 一致性由 `build-apk.sh` 自己校验（`llvm-objcopy --only-section=.text` 后比 SHA-256）：
+
+```
+== packed libmain.so .text matches the clone: a9b2be19...f6010
+== sizes: clone 724756128 B, packed 121937608 B (packaging strips)
+== zipalign -P 16: OK (16 KB page aligned)
+```
+
+`aapt2 dump badging`：`package: name='ai.storyteller.solidcraft' versionName='0.27.1'`、
+`native-code: 'arm64-v8a'`、`launchable-activity: ai.storyteller.solidcraft.MainActivity`。
+
+### 真机（PA2573 / Android 16 / 10.20.166.130:34213）
+
+logcat（`-s SolidCraft:V`）：
+
+```
+solidcraft-android: starting (SolidCraft 0.27.1)
+solidcraft-android: data dir /data/user/0/ai.storyteller.solidcraft/files
+solidcraft-android: adapter Mali-G925-Immortalis MC12 (Vulkan, IntegratedGpu), MSAA supported [1, 2, 4, 8, 16]
+solidcraft-android: viewport pipelines installed, scene MSAA 4x
+solidcraft-android: touch mode applied (ppp 2.5, logical 1238×826 pt)
+solidcraft-android: first frame laid out, the UI is up
+```
+
+截图：`shots/solidcraft-real.png`（起始页 + 6 个样例缩略图，都是 GPU 画的）、
+`shots/solidcraft-viewport.png`（Sample Plate 的三维视口 + 模型树 + 特征时间线）、
+`shots/solidcraft-zh.png`（偏好设置对话框）。
+
+内存：PSS 772 MB / RSS 943 MB（`largeHeap` 已开，设备 12 GB）。首次启动到出 UI 约 1.5 s。
+
+### 这一轮新踩的坑
+
+- **`wm dismiss-keyguard` 能解锁 vivo 锁屏**。STATUS 前几轮一直说锁屏必须人工解（双指上滑，
+  adb 合成不了）。实测 `adb shell wm dismiss-keyguard` 直接让 `deviceLocked=1 → 0`，
+  不需要人工。`locksettings set-disabled true` 只会改设置，当前这次锁屏还得靠前者。
+- **屏幕会自己灭，`pm install` 就变成 `INSTALL_FAILED_ABORTED: User rejected permissions`**。
+  这不是「用户拒绝」，是安装器没法在锁屏上弹窗。装前一定
+  `dumpsys trust | grep -o deviceLocked=[01]`，顺手 `input keyevent KEYCODE_WAKEUP`。
+- **vivo 安装器第一次装会弹「外部来源应用」页**：复选框 (1310,1756)（有身份验证 footer 时），
+  「继续安装」(1570,1870)。第二次起 `pm install` 直接 Success。
+- **`cargo ndk` 的 API level**：`CARGO_NDK_PLATFORM=31` 写进 `env.sh`，minSdk 也是 31。
+- **`egui` 0.36 把「字体族里没有这个字」画成 `◻`（U+25FB 白色方块）**，不是空白。
+  `epaint::CachedFamily::new` 里 `PRIMARY_REPLACEMENT_CHAR = '◻'`。所以「装上了字体」和
+  「egui 用上了字体」是两件事，`Fonts::has_glyph()` 才是判据。
+- **`ctx.set_fonts()` 在帧内调用是下一帧生效**，所以装完字体立刻检查 `has_glyph` 一定看到旧值，
+  要留 1–2 帧。壳里用 `cjk_settle` 计数。

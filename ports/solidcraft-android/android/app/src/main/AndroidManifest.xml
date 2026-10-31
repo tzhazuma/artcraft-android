@@ -1,0 +1,56 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <!--
+        SolidCraft on Android.
+
+        Package id: ai.storyteller.solidcraft, not the upstream bundle io.tangencylabs.solidcraft.
+        The ArtCraft Launcher enumerates installed apps and matches on CraftApp::android_bundle_id(),
+        which returns bundle_id() unless the app is listed in ANDROID_PACKAGE_IDS; SolidCraft lists
+        ai.storyteller.solidcraft among its former_bundles, and the launcher's Java only probes
+        names starting with ai.storyteller. Shipping the upstream id would make the app invisible to
+        the launcher.
+
+        INTERNET is declared for the two facilities the desktop app has that need it (the update
+        check and the agent chat's API agents). The Android shell leaves those `Services` hooks
+        None for now — nothing in this build opens a socket — so the permission is here for the
+        manifest the next step needs, not because a request is made today.
+    -->
+    <uses-permission android:name="android.permission.INTERNET" />
+
+    <!-- The viewport is Vulkan (wgpu), which every arm64 Android 12+ device has. -->
+    <uses-feature android:glEsVersion="0x00030000" android:required="false" />
+
+    <application
+        android:icon="@mipmap/ic_launcher"
+        android:label="SolidCraft"
+        android:roundIcon="@mipmap/ic_launcher_round"
+        android:supportsRtl="true"
+        android:largeHeap="true"
+        android:theme="@style/ActivityTheme">
+        <!--
+            The launcher bridge: an exported MAIN/LAUNCHER activity is what the ArtCraft Launcher's
+            `getLaunchIntentForPackage("ai.storyteller.solidcraft")` resolves to, and what the
+            device's own launcher shows.
+
+            `configChanges` keeps a rotation from recreating the activity: the whole app state (the
+            session, the GPU device, the undo history) lives in the Rust cdylib, which android-activity
+            does not re-create.
+        -->
+        <activity
+            android:name="ai.storyteller.solidcraft.MainActivity"
+            android:configChanges="orientation|screenSize|screenLayout|keyboardHidden|density|uiMode"
+            android:exported="true"
+            android:launchMode="singleTask"
+            android:screenOrientation="sensorLandscape">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+
+            <!-- android-activity loads this library; it must match `[lib] name = "main"`. -->
+            <meta-data android:name="android.app.lib_name" android:value="main" />
+        </activity>
+    </application>
+
+</manifest>

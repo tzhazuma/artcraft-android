@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- SolidCraft's mark is a blue isometric S on transparent ground; the adaptive icon needs an
+         opaque background behind it. Near-black blue keeps the mark's own blues legible under both
+         the circular and the squircle mask. -->
+    <color name="ic_launcher_background">#ff0a1020</color>
+</resources>

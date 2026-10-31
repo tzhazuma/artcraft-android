@@ -1,0 +1,19 @@
+[package]
+name = "arboard"
+version = "3.6.1"
+edition = "2021"
+license = "MIT OR Apache-2.0"
+description = "Android build shim for arboard: the real crate has no Android backend, so the system clipboard is always empty. The ArtCraft ports that need cross-app copy/paste go through JNI (ClipboardManager) instead."
+publish = false
+
+# Its own workspace root: the stub lives under patches/, inside no workspace of its own, and a bare
+# path package there would otherwise make cargo walk up into a parent manifest and fail to parse it.
+[workspace]
+
+# The features dependents ask for. All empty: this crate links nothing.
+[features]
+default = []
+image-data = []
+wayland-data-control = []
+
+[dependencies]
