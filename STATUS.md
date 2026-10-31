@@ -25,7 +25,7 @@ against `ports/`, and exits 10 when one has no Android port. Run it alongside `c
 
 | app | upstream | android package | state |
 |---|---|---|---|
-| SolidCraft | `tangency-labs/solidcraft` | `ai.storyteller.solidcraft` | port in progress |
+| SolidCraft | `tangency-labs/solidcraft` | `ai.storyteller.solidcraft` | **ported** 0.27.1 — installed, launched, listed by the launcher |
 
 A community app's declared bundle is usually not `ai.storyteller.*`, and the Android activity only
 probes names under that prefix. When porting one, ship it under a `former_bundles` id if it has one
