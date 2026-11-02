@@ -2062,3 +2062,43 @@ SHA-256 与克隆里刚构建的那份一致（文件大小不同是打包 strip
 - **手机锁屏时 `wm dismiss-keyguard` 这次没解开**（`deviceLocked=1` 一直是 1，截图全黑），
   和上一轮「能解开」的结论不一致；可能这次是真正的锁屏（需要 PIN/双指上滑）。
   按简报的规则没有停等：APK 照建照发，SolidCraft 记进 `## Install pending`。
+
+---
+
+## 2026-11-02 — SoundCraft 没有声音：两处独立的缺陷
+
+用户报告「涉及音频的播放有问题」。只有 SoundCraft 用 cpal（其余应用不碰音频输出），而它
+**一个音频设备都没打开**。两个缺陷叠在一起：
+
+### 1. shell 把 player 传成了 `None`
+
+桌面 `apps/soundcraft/src/main.rs` 里：
+
+```rust
+let player = if no_audio { None }
+             else { Some(soundcraft_playback::Player::with_config(Arc::new(engine.session().clone()), &prefs.audio)) };
+let mut app = SoundApp::new(engine, player, services());
+```
+
+Android shell 对应位置写的是 `SoundApp::new(Engine::default(), None, services(...))`。
+`Player` 是**唯一**会打开输出流的东西，传 `None` 的结果是：混音、编辑、波形全部正常，
+就是不出声 —— 看起来像后端坏了，其实压根没有对象。
+
+### 2. 链接期 `-laaudio` 找不到
+
+补上 player 之后立刻暴露：`ld.lld: error: unable to find library -laaudio`。
+AAudio 从 **API 26** 才有，cargo-ndk 默认 21。必须 `--platform 31`。
+
+**`-p 31` 不行** —— cargo-ndk 的 `-p` 就是它自己的 `--platform`，同时再传一个 `-p <crate>`
+指定 cargo 包会让 cargo-ndk **panic**（打印环境变量转储 + 报 bug 链接），而不是报用法错误。
+`--platform` 才能和 `-p <包名>` 共存。
+
+### 验证
+
+- `llvm-readelf -d` 里 `libaaudio.so` 是 DT_NEEDED（不是只被引用）
+- 打包的 `libmain.so` `.text` 与新建库逐字节一致（sha `94ed6446f138ac5b`）
+
+### 待办
+
+真机装机验证出声。`dist-repos/` 被 .gitignore 忽略（每次从模板生成），所以
+`--platform 31` 这一条只记录在这里和定时任务里，改模板时别忘了。
