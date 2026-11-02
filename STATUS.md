@@ -45,12 +45,23 @@ version is installed and verified.
 
 | app | version | apk | date |
 |---|---|---|---|
-| SolidCraft | 0.28.0 | `out/SolidCraft-0.28.0-android-arm64.apk` (published as `SolidCraft-android-arm64.apk`) | 2026-11-01 |
-| SoundCraft | 0.15.1 | `out/SoundCraft-0.15.1-android-arm64.apk` (published as `SoundCraft-android-arm64.apk`) | 2026-11-02 |
+| CADCraft | 0.16.0 | `out/Cadcraft-0.16.0-android-arm64.apk` (published as `CADCraft-android-arm64.apk`) | 2026-11-03 |
+| ArtCraft Launcher | 0.13.0 | `out/ArtCraftLauncher-0.13.0-android-arm64.apk` (published as `ArtCraftLauncher-android-arm64.apk`) | 2026-11-03 |
+| DeckCraft | 0.14.1 | `out/Deckcraft-0.14.1-android-arm64.apk` (published as `DeckCraft-android-arm64.apk`) | 2026-11-03 |
+| DesignCraft | 0.16.0 | `out/Designcraft-0.16.0-android-arm64.apk` (published as `DesignCraft-android-arm64.apk`) | 2026-11-03 |
+| FigCraft | 0.14.0 | `out/FigCraft-0.14.0-android-arm64.apk` (published as `FigCraft-android-arm64.apk`) | 2026-11-03 |
+| GridCraft | 0.15.0 | `out/GridCraft-0.15.0-android-arm64.apk` (published as `GridCraft-android-arm64.apk`) | 2026-11-03 |
+| SolidCraft | 0.30.1 | `out/SolidCraft-0.30.1-android-arm64.apk` (published as `SolidCraft-android-arm64.apk`) | 2026-11-03 |
+| SoundCraft | 0.16.0 | `out/SoundCraft-0.16.0-android-arm64.apk` (published as `SoundCraft-android-arm64.apk`) | 2026-11-03 |
+| VectorCraft | 0.20.0 | `out/VectorCraft-0.20.0-android-arm64.apk` (published as `VectorCraft-android-arm64.apk`) | 2026-11-03 |
+| WordCraft | 0.14.0 | `out/Wordcraft-0.14.0-android-arm64.apk` (published as `WordCraft-android-arm64.apk`) | 2026-11-03 |
 
-SolidCraft is the only one left: the phone locked while the 0.28.0 APK was building and then
-dropped off adb (`device offline`, black screen, `deviceLocked=1`), so the install could not run.
-Everything else in this sync is installed and cold-launched; see the 2026-10-31 section at the end.
+All ten are the 2026-11-03 version sync. The phone was **not reachable at all** during that run:
+`adb devices` was empty, the last known `192.168.0.105:5555` was closed, and a scan of
+`192.168.0.0/24` found no 5555 listener. So nothing was installed or launched; the builds and the
+published assets are verified, the on-hardware claim is not made. The two earlier rows (SolidCraft
+0.28.0, SoundCraft 0.15.1) were superseded by this sync and their assets replaced, so they are gone
+from this table.
 
 ## 0. 一句话结论
 
@@ -2103,3 +2114,72 @@ AAudio 从 **API 26** 才有，cargo-ndk 默认 21。必须 `--platform 31`。
 
 真机装机验证出声。`dist-repos/` 被 .gitignore 忽略（每次从模板生成），所以
 `--platform 31` 这一条只记录在这里和定时任务里，改模板时别忘了。
+
+---
+
+## 2026-11-03：十个应用按「上游版本变了」同步、重建、发布；设备不可达，全部待装
+
+`scripts/check-version.sh` 这一轮报了 **十个**，不是简报里的九个：**figcraft 0.13.1 → 0.14.0**
+也落后（简报的快照比上游旧，和 2026-10-31 那轮一样）。十个全部同步、重建、发布。
+`check-community.sh` 仍是 `solidcraft ported`，exit 0，没有社区应用要补。
+
+**手机整轮不可达**：`adb devices` 为空，上次地址 `192.168.0.105:5555` 关闭，`192.168.0.0/24`
+扫不到 5555。所以下面的 APK 全部只到「已构建、已发布」，**没有一个是装过或启动过的**，
+十条都记进 `## Install pending`。这是比 2026-10-31 更弱的结论，不要当装机结果读。
+
+| app | 旧 → 新 | 上游 HEAD | 提交数 | libmain.so | APK | packed `.text` | 资产 |
+|---|---|---|---|---|---|---|---|
+| cadcraft | 0.15.1 → 0.16.0 | `dae4b7b` | 46 | 45,301,984 B | 39,070,644 B | `7efabeb2392ec136` | `CADCraft-android-arm64.apk` |
+| craft-launcher | 0.11.1 → 0.13.0 | `ec20536`（合入） | 13 | 23,356,264 B | 26,112,442 B | `2406b858fe981db4` | `ArtCraftLauncher-android-arm64.apk` |
+| deckcraft | 0.13.1 → 0.14.1 | `0d45a64d` | 60 | 60,959,144 B | 50,660,180 B | `1c357e5354c80b96` | `DeckCraft-android-arm64.apk` |
+| designcraft | 0.15.2 → 0.16.0 | `cc3c70d4` | 110 | 103,603,920 B | 83,637,540 B | `ab0c0a2f411c5ce9` | `DesignCraft-android-arm64.apk` |
+| figcraft | 0.13.1 → 0.14.0 | `e65ce420` | 40 | 82,774,848 B | 64,722,532 B | `a0f741f1e81c6f25` | `FigCraft-android-arm64.apk` |
+| gridcraft | 0.14.2 → 0.15.0 | `9172516a` | 159 | 47,724,152 B | 40,507,972 B | `11dd5ff23582ea95` | `GridCraft-android-arm64.apk` |
+| solidcraft | 0.28.0 → 0.30.1 | `00f7e97` | 388 | 768,390,160 B（打包 strip 到 129,743,104 B） | 136,041,244 B | `685c841958529831` | `SolidCraft-android-arm64.apk` |
+| soundcraft | 0.15.0 → 0.16.0 | `1dbc185` | 79 | 38,617,912 B | 33,473,072 B | `908c13f8c60cabcc` | `SoundCraft-android-arm64.apk` |
+| vectorcraft | 0.19.0 → 0.20.0 | `4ee0ef231` | 753 | 117,863,160 B | 104,215,280 B | `ad664e396ede9aed` | `VectorCraft-android-arm64.apk` |
+| wordcraft | 0.13.2 → 0.14.0 | `41d46625` | 61 | 79,934,136 B | 65,362,572 B | `666a03660ceb54fc` | `WordCraft-android-arm64.apk` |
+
+每个 APK 都过了 `zipalign -c -P 16`；解包出的 `lib/arm64-v8a/libmain.so` 用
+`llvm-objcopy --dump-section .text` 与 clone 里刚构建的那份逐字节比对，十个全部一致
+（文件大小不同是打包 strip，不能按大小比）。
+
+### 两处手写修复都原样保留
+
+- **soundcraft 音频**（`ports/soundcraft-android/src/lib.rs`）：`Player::with_config(...)` 仍然
+  构造出来传给 `SoundApp::new`，`Cargo.toml` 仍有 `soundcraft-playback`；构建前后
+  `src/lib.rs` sha256 都是 `3ff6a221e51869b2`。最终 APK 的 `libmain.so` 里 `libaaudio.so` 是
+  DT_NEEDED，说明 `--platform 31` 真的生效了（不是只编过）。
+- **solidcraft CJK**（`ports/solidcraft-android/src/lib.rs`）：`cjk_works` 仍逐个检查
+  `ui-medium` / `ui-semibold` / `ui-bold` 三个 family，状态机仍会在 face 还在时重新检查；
+  构建前后 sha256 都是 `0a9e617b3ce7c3aa`。`patches/solidcraft-android/upstream/setup-arboard-stub.sh`
+  跑过（幂等）。
+
+### 这轮没有需要改移植壳的地方
+
+十个壳都直接编过了：egui 0.37 的 `raw_input_hook(&egui::Context, ..)` 早已在 ports/ 里；
+cadcraft 与 soundcraft 的 `menus.rs` 补丁对新上游干净应用；designcraft 先跑了
+`ports/designcraft-android/upstream/setup-rfd-stub.sh`（幂等），`rfd` 仍无 Android 后端；
+`dist-repos/soundcraft-android/scripts/build-so.sh` 里已经有 `--platform 31` 的修复，不需要重建模板。
+
+### craft-launcher：clean merge，没有跑 make-shell.sh
+
+`main` 从 `68eeee9` 快进到 `ec20536`（13 commits）再并进 `android-port`，**零冲突**——这 13 个提交
+没有碰 `crates/native/src/http.rs` 的 `root_certs()` / `PlatformVerifier` / `is_loopback()`，也没有碰
+`PackageKind::Apk`、SolidCraft 探测、`INTERNET` / `QUERY_ALL_PACKAGES` / `<queries>`。只把
+`versionName` 从 0.11.1 提到 0.13.0（同时更新 `Cargo.lock` 里 crate 自己的版本），提交
+`6deeb55` 并推到 **fork**：`tzhazuma/craft-launcher android-port`。`origin` 是上游，没推。
+APK 的 manifest 复核过：`INTERNET`、`QUERY_ALL_PACKAGES` 都在。
+
+### 发布
+
+- `tzhazuma/artcraft-android` 每个 app 一个提交（十个），加本 STATUS 提交；`android-v1` 的十个
+  同名资产全部用新 APK 替换（`~/gh-upload.sh` 的 already_exists → delete → re-post 路径）。
+- `~/android-ports` 的 `assets/apps.js`：十个 ArtCraft 条目的 version 与 size 都按新资产更新，
+  提交 `1ba75ed` 并推到 `origin/main`。
+- 没有 launch 截图：设备整轮不可达，不伪造「已启动」的证据。
+
+### 过程/磁盘
+
+构建仍走 `scripts/build-lock.sh` 串行化，`CARGO_BUILD_JOBS=4`；每个 app 成功、核对 `.text`、
+上传后删掉它的 `target/` 与 `android/app/build/`（最低时磁盘只剩 27 GB，清理后回到 38 GB）。
