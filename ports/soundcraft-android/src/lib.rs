@@ -66,9 +66,20 @@ fn android_main(app: AndroidApp) {
     // back over the control channel and runs the matching engine command.
     let (ctrl_tx, ctrl_rx) = std::sync::mpsc::channel::<soundcraft_ui_egui::ControlRequest>();
     let activity = app.activity_as_ptr() as usize;
+    let engine = Engine::default();
+    // The player is the only thing that opens an audio device; the desktop shell constructs it the
+    // same way. Passing `None` here — as this shell did — yields an app that mixes happily and
+    // plays nothing, which looks exactly like a broken audio backend.
+    //
+    // On Android cpal's default host is AAudio (`host::aaudio`), so this needs no host name:
+    // `AudioConfig::default()` asks for the system default output at its default rate.
+    let player = Some(soundcraft_playback::Player::with_config(
+        std::sync::Arc::new(engine.session().clone()),
+        &soundcraft_playback::AudioConfig::default(),
+    ));
     let mut vc = SoundApp::new(
-        Engine::default(),
-        None,
+        engine,
+        player,
         services(ctrl_tx, activity, data_dir.clone()),
     )
     .with_control(ctrl_rx);

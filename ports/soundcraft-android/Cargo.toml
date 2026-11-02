@@ -25,6 +25,9 @@ crate-type = ["cdylib"]
 [target.'cfg(target_os = "android")'.dependencies]
 soundcraft-engine = { workspace = true }
 soundcraft-ui-egui = { workspace = true }
+# The player is what opens the audio device. Without it the app has no output path at all -- see
+# `android_main`, which passes it to `SoundApp::new`.
+soundcraft-playback = { workspace = true }
 egui = { workspace = true }
 serde_json = { workspace = true }
 log = { workspace = true }
