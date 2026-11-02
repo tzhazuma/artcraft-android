@@ -46,6 +46,7 @@ version is installed and verified.
 | app | version | apk | date |
 |---|---|---|---|
 | SolidCraft | 0.28.0 | `out/SolidCraft-0.28.0-android-arm64.apk` (published as `SolidCraft-android-arm64.apk`) | 2026-11-01 |
+| SoundCraft | 0.15.1 | `out/SoundCraft-0.15.1-android-arm64.apk` (published as `SoundCraft-android-arm64.apk`) | 2026-11-02 |
 
 SolidCraft is the only one left: the phone locked while the 0.28.0 APK was building and then
 dropped off adb (`device offline`, black screen, `deviceLocked=1`), so the install could not run.
