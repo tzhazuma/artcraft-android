@@ -39,29 +39,25 @@ APKs that are built, committed and published but **not installed and launched on
 APK in this list is a weaker claim than one that has been opened: the build and the `.so` freshness
 check passed, but nothing has run on hardware.
 
-The scheduled sync adds a line here whenever the phone is unreachable or locked (it needs a
-two-finger swipe up, which `adb shell input swipe` cannot synthesise). Remove the line once that
-version is installed and verified.
+The scheduled sync adds a line here whenever the phone is unreachable or locked. Remove the line once
+that version is installed and verified.
 
 | app | version | apk | date |
 |---|---|---|---|
-| CADCraft | 0.16.0 | `out/Cadcraft-0.16.0-android-arm64.apk` (published as `CADCraft-android-arm64.apk`) | 2026-11-03 |
-| ArtCraft Launcher | 0.13.0 | `out/ArtCraftLauncher-0.13.0-android-arm64.apk` (published as `ArtCraftLauncher-android-arm64.apk`) | 2026-11-03 |
-| DeckCraft | 0.14.1 | `out/Deckcraft-0.14.1-android-arm64.apk` (published as `DeckCraft-android-arm64.apk`) | 2026-11-03 |
-| DesignCraft | 0.16.0 | `out/Designcraft-0.16.0-android-arm64.apk` (published as `DesignCraft-android-arm64.apk`) | 2026-11-03 |
-| FigCraft | 0.14.0 | `out/FigCraft-0.14.0-android-arm64.apk` (published as `FigCraft-android-arm64.apk`) | 2026-11-03 |
-| GridCraft | 0.15.0 | `out/GridCraft-0.15.0-android-arm64.apk` (published as `GridCraft-android-arm64.apk`) | 2026-11-03 |
-| SolidCraft | 0.30.1 | `out/SolidCraft-0.30.1-android-arm64.apk` (published as `SolidCraft-android-arm64.apk`) | 2026-11-03 |
-| SoundCraft | 0.16.0 | `out/SoundCraft-0.16.0-android-arm64.apk` (published as `SoundCraft-android-arm64.apk`) | 2026-11-03 |
-| VectorCraft | 0.20.0 | `out/VectorCraft-0.20.0-android-arm64.apk` (published as `VectorCraft-android-arm64.apk`) | 2026-11-03 |
-| WordCraft | 0.14.0 | `out/Wordcraft-0.14.0-android-arm64.apk` (published as `WordCraft-android-arm64.apk`) | 2026-11-03 |
 
-All ten are the 2026-11-03 version sync. The phone was **not reachable at all** during that run:
-`adb devices` was empty, the last known `192.168.0.105:5555` was closed, and a scan of
-`192.168.0.0/24` found no 5555 listener. So nothing was installed or launched; the builds and the
-published assets are verified, the on-hardware claim is not made. The two earlier rows (SolidCraft
-0.28.0, SoundCraft 0.15.1) were superseded by this sync and their assets replaced, so they are gone
-from this table.
+_(empty — every published APK has been installed on the PA2573)_
+
+2026-11-03: the twelve pending APKs were installed over wireless debugging and every one reports the
+published `versionName` (`dumpsys package`, 15/15 matching). Two of them also had their fixes
+verified on the device:
+
+- **SolidCraft 0.30.1** — switched to 简体中文 in Preferences; the whole UI renders in Chinese, and
+  the log shows the shell re-installing its CJK face at the moment the app replaced the font set
+  (`CJK face appended …` at 14:20:06, i.e. on the language change, not just at startup). Screenshot:
+  `shots/solidcraft-zh-fixed.png`.
+- **SoundCraft 0.16.0** — `AAudioStreamBuilder_openStream() returns 0 = AAUDIO_OK`, then
+  `soundcraft_playback: audio device: Default Device @ 48000 Hz, 2 ch, f32`. A real output stream is
+  open, which is what was missing before.
 
 ## 0. 一句话结论
 
