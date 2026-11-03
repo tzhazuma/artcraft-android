@@ -43,7 +43,14 @@ for dir in "$ROOT"/src/*/; do
   [ -z "$local_ver" ] && continue
   if [ "$local_ver" != "$remote_ver" ]; then
     behind="$(git -C "$dir" rev-list --count HEAD..origin/main 2>/dev/null || echo '?')"
-    printf '%-14s %s -> %s  (%s commits)\n' "$app" "$local_ver" "$remote_ver" "$behind"
+    # A release candidate is not the same event as a release: it is published, but shipping it
+    # silently hands users a pre-release. Mark it so the sync can decide deliberately instead of
+    # treating `0.30.1 -> 0.40.0-rc.1` as just another bump.
+    case "$remote_ver" in
+      *-*) note="  PRE-RELEASE" ;;
+      *)   note="" ;;
+    esac
+    printf '%-14s %s -> %s  (%s commits)%s\n' "$app" "$local_ver" "$remote_ver" "$behind" "$note"
     moved=1
   fi
 done
