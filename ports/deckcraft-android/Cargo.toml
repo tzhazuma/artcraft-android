@@ -25,6 +25,11 @@ crate-type = ["cdylib"]
 [target.'cfg(target_os = "android")'.dependencies]
 deckcraft-engine = { workspace = true }
 deckcraft-ui-egui = { workspace = true }
+# The media player is clocked by the audio device; `audio.rs` needs both.
+deckcraft-media = { workspace = true }
+# Declared here, not inherited: the workspace has no `cpal` entry -- the desktop app crate
+# carries its own. Same version as `apps/deckcraft/Cargo.toml`.
+cpal = "0.16"
 egui = { workspace = true }
 serde_json = { workspace = true }
 log = { workspace = true }

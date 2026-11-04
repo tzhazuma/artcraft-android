@@ -16,6 +16,7 @@
 //! Known gaps are listed in the crate README; none of them stop the UI from coming up.
 #![cfg(target_os = "android")]
 
+mod audio;
 mod saf;
 
 use std::path::PathBuf;
@@ -121,6 +122,14 @@ fn services(
     services.write = Some(Box::new(|path: &str, bytes: &[u8]| {
         std::fs::write(path, bytes).map_err(|e| format!("{path}: {e}"))
     }));
+
+    /* Android-port: media is mixed and clocked by the output device, so without an `AudioOut` the
+     * app plays nothing at all -- slides advance and the timeline runs, silently. The desktop
+     * installs `CpalOut` here (`DECKCRAFT_NO_AUDIO` plays silently on purpose); Android had no
+     * equivalent, which reads as a broken audio backend rather than as a missing object.
+     * cpal's Android host is AAudio, so the crate must also be built with --platform 31 (AAudio
+     * is API 26+); the link fails with `unable to find library -laaudio` otherwise. */
+    services.audio_out = Some(Box::new(audio::CpalOut::default()));
 
     let open_ctrl = ctrl.clone();
     let open_dir = data_dir.clone();
