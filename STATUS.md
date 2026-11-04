@@ -2184,3 +2184,45 @@ APK 的 manifest 复核过：`INTERNET`、`QUERY_ALL_PACKAGES` 都在。
 
 构建仍走 `scripts/build-lock.sh` 串行化，`CARGO_BUILD_JOBS=4`；每个 app 成功、核对 `.text`、
 上传后删掉它的 `target/` 与 `android/app/build/`（最低时磁盘只剩 27 GB，清理后回到 38 GB）。
+
+---
+
+## 2026-11-04 — 全套装音频排查
+
+用户问「其他应用比如视频剪辑的中间音频有没有修复」。逐个查了 15 个应用的音频依赖：
+
+| 应用 | 音频库 | 状态 |
+|---|---|---|
+| SoundCraft | cpal 0.18 | **已修复并验证**：`audio_flinger` 记录 **340 秒 / 5 个会话**的实际播放 |
+| DeckCraft | cpal 0.16 | 修复 + 已装，AAudio 已链接，播放未验证 |
+| FilmCraft | cpal 0.16 | 修复 + 已装，AAudio 已链接，播放未验证 |
+| EffectCraft | cpal 0.16 | 修复 + 已装，AAudio 已链接，播放未验证 |
+| 其余 11 个 | 无 | 不涉及音频输出 |
+
+### 三个应用都是同一个 bug 模式
+
+shell 把「音频设备」这个参数留空，而不是像桌面版那样传一个真实对象：
+
+- **DeckCraft**：`services.audio_out` 从未设置（桌面传 `CpalOut`）
+- **FilmCraft**：shell 顶部注释直接写着 `cpal audio output | not wired yet`
+- **EffectCraft**：`audio_device: None`，注释说「cpal 的 Android 后端需要权限和路由」
+
+**那条「需要权限」的注释是错的** —— 播放到扬声器不需要任何 Android 权限，只有录音才需要。三个应用都没有正当理由留空。
+
+### 修法（与 SoundCraft 一致）
+
+桌面版的音频模块是可移植的（只依赖 `cpal` + 应用自己的 feed 类型），直接复制进 port shell，
+桌面文件不动。加上 `--platform 31`（AAudio 是 API 26+，默认 21 会在链接期死在 `-laaudio`）。
+
+### 版本号
+
+EffectCraft 0.16.0 → **0.16.1**，FilmCraft 0.12.0 → **0.12.1**。同版本号重发的话，用户在商店里
+分不出哪个是有声音的版本。
+
+### 验证到哪一步
+
+`llvm-readelf -d` 确认三个的打包库都有 `DT_NEEDED libaaudio.so`，`.text` 与新建库一致，都已装机。
+
+**但「真的出声」只对 SoundCraft 有证据**（`audio_flinger` 的 340 秒累计播放）。另外三个需要
+在应用里打开一个带音频的工程并点播放，而手机前台一直被 VS Code 里的另一个 agent 抢走，
+没能驱动到那一步。这一条不能算已验证。
