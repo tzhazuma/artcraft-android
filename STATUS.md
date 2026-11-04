@@ -44,8 +44,13 @@ that version is installed and verified.
 
 | app | version | apk | date |
 |---|---|---|---|
+| DeckCraft | 0.15.0 | `out/Deckcraft-0.15.0-android-arm64.apk` (audio device wired) | 2026-11-04 |
 
-_(empty — every published APK has been installed on the PA2573)_
+2026-11-04: DeckCraft's audio output was wired the same way SoundCraft's was — `services.audio_out`
+had never been set, so presentations advanced silently. The build links AAudio
+(`DT_NEEDED libaaudio.so`) and its `.text` matches the fresh library, but the phone was on another
+network, so no device log exists yet. Installing it and reading `AAUDIO_OK` from logcat is what turns
+"linked" into "plays".
 
 2026-11-03: the twelve pending APKs were installed over wireless debugging and every one reports the
 published `versionName` (`dumpsys package`, 15/15 matching). Two of them also had their fixes
