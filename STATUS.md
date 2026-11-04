@@ -2223,6 +2223,17 @@ EffectCraft 0.16.0 → **0.16.1**，FilmCraft 0.12.0 → **0.12.1**。同版本�
 
 `llvm-readelf -d` 确认三个的打包库都有 `DT_NEEDED libaaudio.so`，`.text` 与新建库一致，都已装机。
 
-**但「真的出声」只对 SoundCraft 有证据**（`audio_flinger` 的 340 秒累计播放）。另外三个需要
-在应用里打开一个带音频的工程并点播放，而手机前台一直被 VS Code 里的另一个 agent 抢走，
-没能驱动到那一步。这一条不能算已验证。
+**「真的出声」只对 SoundCraft 有证据**（`audio_flinger` 的 340 秒累计播放）。
+
+另外三个的静态证据都齐了 —— 每个打包库都能看到：
+
+- `DT_NEEDED libaaudio.so`（AAudio 后端真的链上了）
+- `cpal-0.16.0/src/host/aaudio/mod.rs` 路径字符串（AAudio 后端被编译进去了）
+- 应用自己的错误串（`no audio output device` / `has no audio` / `audio output failed`）
+
+但**都没听到声音**。原因是 `CpalOut` 惰性开流：不点播放就不建流，`audio_flinger` 里就看不到
+会话。要验证需要打开一个带音频的工程并点播放，而手机前台一直被 VS Code 里的另一个 agent 抢走
+（`force-stop` 两次，几秒后又抢回来），没能驱动到那一步。
+
+**这一条不能算已验证。** 留给人的听感测试：打开 DeckCraft 放带音频的演示、FilmCraft 放个视频、
+EffectCraft 放带音频的预览，听有没有声音；没声音给我 `adb logcat | grep -iE "aaudio|cpal"`。
