@@ -2235,5 +2235,6 @@ EffectCraft 0.16.0 → **0.16.1**，FilmCraft 0.12.0 → **0.12.1**。同版本�
 会话。要验证需要打开一个带音频的工程并点播放，而手机前台一直被 VS Code 里的另一个 agent 抢走
 （`force-stop` 两次，几秒后又抢回来），没能驱动到那一步。
 
-**这一条不能算已验证。** 留给人的听感测试：打开 DeckCraft 放带音频的演示、FilmCraft 放个视频、
-EffectCraft 放带音频的预览，听有没有声音；没声音给我 `adb logcat | grep -iE "aaudio|cpal"`。
+**2026-11-06 用户确认：声音没问题了。** 四个应用的音频输出全部生效 —— SoundCraft 有
+`audio_flinger` 的 340 秒播放记录，另外三个由用户在真机上听感确认。这条链路（cpal → AAudio →
+`--platform 31`）在整套应用里都成立。
