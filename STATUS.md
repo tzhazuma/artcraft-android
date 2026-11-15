@@ -2364,6 +2364,10 @@ I MailCraft: mailcraft-android: CJK face /system/fonts/DroidSansFallbackBBK.ttf 
 I MailCraft: mailcraft-android: CJK face in place after 1 try(ies)
 ```
 
+上面是第一次装机的日志。**最终发布的那一版**（去掉了没有生产者的键盘通道）重新装了一次，
+`pidof` = 12864、Activity 在前台、`shots/mailcraft-relaunch.png` 与第一版渲染一致；发布资产
+（sha256 `892adecd…64b41`，42,261,412 B）与 `out/` 里那份逐字节相同。
+
 截图：`shots/mailcraft-relaunch.png`（两次装机后的三次窗格 + Add Account 对话框）、
 `shots/mailcraft-ui3.png`（收件箱 / 文件夹 / 阅读窗格，状态栏「0 items · This mailbox is on this
 device only」）、`shots/mailcraft-file-menu.png`（File 后台页：Info / Open & Export / Options /
