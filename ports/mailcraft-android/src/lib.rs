@@ -10,7 +10,6 @@
 #![cfg(target_os = "android")]
 
 mod host;
-mod ime;
 mod saf;
 
 use std::path::{Path, PathBuf};
@@ -271,19 +270,8 @@ impl eframe::App for Shell {
     }
 
     fn raw_input_hook(&mut self, _ctx: &egui::Context, raw: &mut egui::RawInput) {
-        // What the input method committed since the last frame (see [`ime`]): winit's Android
-        // backend never forwards it, so the shell turns it into the events a keyboard would have
-        // produced. They go in after the window's own, before the app sees the frame.
-        for op in ime::drain(&self.data_dir) {
-            match op {
-                ime::Op::Text(text) => {
-                    log::debug!("mailcraft-android: keyboard text ({} characters)", text.chars().count());
-                    raw.events.push(egui::Event::Text(text));
-                }
-                ime::Op::Backspace => raw.events.push(key_press(egui::Key::Backspace)),
-                ime::Op::Enter => raw.events.push(key_press(egui::Key::Enter)),
-            }
-        }
+        // Keyboard events are forwarded as they come. (What an input method commits is not among
+        // them: winit 0.30's Android backend drops `InputEvent::TextEvent` — see the README.)
         self.app.raw_input_hook(raw);
     }
 
@@ -320,11 +308,6 @@ impl eframe::App for Shell {
         std::mem::forget(std::mem::take(&mut self.app.session.mailbox));
         log::info!("mailcraft-android: exiting");
     }
-}
-
-/// A key press with the modifiers the window last saw, for the events the keyboard bridge makes.
-fn key_press(key: egui::Key) -> egui::Event {
-    egui::Event::Key { key, physical_key: None, pressed: true, repeat: false, modifiers: egui::Modifiers::NONE }
 }
 
 // ---- the device's CJK face ----

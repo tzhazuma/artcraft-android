@@ -90,7 +90,16 @@ bash dist-repos/mailcraft-android/scripts/device-smoke.sh \
    `.vcf`) import fine.
 4. **The clipboard carries text, not HTML**: copying formatted text from another program arrives
    as plain text.
-5. **The layout is the desktop's.** Touch targets are 36 pt and the window is landscape, but the
+5. **The soft keyboard's characters do not reach the window.** winit 0.30's Android backend
+   forwards only key events; an input method's committed text arrives as
+   `InputEvent::TextEvent` and falls into `_ => warn!("Unknown android activity input event")`,
+   so it is dropped before egui sees it. The keyboard opens, the IME composes, and nothing lands
+   in the field. `android-activity` itself does deliver the event (and `AndroidApp::text_input_state()`
+   reports the editor's text), so the fix is a winit patch that turns `TextEvent` into
+   `WindowEvent::Ime(Ime::Commit)` — a shared dependency, so it was left alone here. Until then,
+   Paste (the text menu's Paste goes through `Services::clipboard.text()`) is the way to put text
+   into a field.
+6. **The layout is the desktop's.** Touch targets are 36 pt and the window is landscape, but the
    three-pane layout at ~1238×826 pt is dense on a phone.
-6. **No desktop notifications** for reminders, and no self-update (that is deliberate: a desktop
+7. **No desktop notifications** for reminders, and no self-update (that is deliberate: a desktop
    release installed here would replace this build).
