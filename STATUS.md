@@ -26,6 +26,7 @@ against `ports/`, and exits 10 when one has no Android port. Run it alongside `c
 | app | upstream | android package | state |
 |---|---|---|---|
 | SolidCraft | `tangency-labs/solidcraft` | `ai.storyteller.solidcraft` | **ported** 0.27.1 — installed, launched, listed by the launcher |
+| MailCraft | `UCS-Care-Group/mailcraft` | `ai.storyteller.mailcraft` | **ported** 0.9.0 — installed, launched (2026-11-16) |
 
 A community app's declared bundle is usually not `ai.storyteller.*`, and the Android activity only
 probes names under that prefix. When porting one, ship it under a `former_bundles` id if it has one
@@ -2253,3 +2254,152 @@ EffectCraft 0.16.0 → **0.16.1**，FilmCraft 0.12.0 → **0.12.1**。同版本�
 **2026-11-06 用户确认：声音没问题了。** 四个应用的音频输出全部生效 —— SoundCraft 有
 `audio_flinger` 的 340 秒播放记录，另外三个由用户在真机上听感确认。这条链路（cpal → AAudio →
 `--platform 31`）在整套应用里都成立。
+
+---
+
+## 2026-11-16：MailCraft 0.9.0 —— 第 15 个移植，第二个社区应用
+
+`scripts/check-community.sh` 每天报一次的 `mailcraft NOT PORTED` 消失了（现在 solidcraft /
+mailcraft 都是 `ported`，exit 0）。
+
+上游 `UCS-Care-Group/mailcraft` v0.9.0。**先验栈再动手**：`apps/mailcraft` + `apps/mailcraft-web`
++ `crates/ui-egui`，`eframe 0.37`/`egui 0.37`，与其余 Craft 应用同族，不是 Electron/Tauri/Flutter，
+所以老的移植模式原样适用。
+
+### 包名：`former_bundles` 是空的，只能自己声明一个
+
+MailCraft 的 catalog 条目：
+
+```toml
+bundle = "io.github.billsecond.mailcraft"
+former_bundles = []          # ← SolidCraft 有 ai.storyteller.solidcraft，MailCraft 一个都没有
+```
+
+「社区应用必须用 catalog 声明的 `former_bundles` id 装机」这条规则在这里**没有可用的 id**，
+所以先把它声明出来，再四处接线（少一处 launcher 就永远看不见）：
+
+| 位置 | 改动 |
+|---|---|
+| 移植自己的 `applicationId` | `ai.storyteller.mailcraft` |
+| `crates/core/catalog.toml` | MailCraft 的 `former_bundles = ["ai.storyteller.mailcraft"]` |
+| `crates/core/src/catalog.rs` | `ANDROID_PACKAGE_IDS` 加 `("mailcraft", "ai.storyteller.mailcraft")` |
+| launcher `MainActivity.java` | `suite` 数组加 `"ai.storyteller.mailcraft"` |
+| launcher `AndroidManifest.xml` | `<queries>` 加 `<package android:name="ai.storyteller.mailcraft" />` |
+
+### 唯一的真阻塞：`rustls-platform-verifier` 的 Android 后端是 Maven AAR
+
+`mailcraft-net` 用 `rustls-platform-verifier 0.7.1` 校验证书。桌面端它调系统验证器；**Android 端
+是一个 JVM 组件**（`org.rustls:rustls-platform-verifier-android`，从 GitHub 上的私有 Maven 仓库
+拉），本 Gradle 壳没有这个依赖，`Verifier::new` 运行时必然失败。和 launcher 移植当时一样绕开：
+
+`patches/mailcraft-android/upstream/setup-tls-android.sh`（幂等，`build-so.sh` 每次构建前跑）
+把 `crates/net/src/tls.rs` 里那两处 `Verifier::new` 换成一个 `platform_verifier()` 钩子；
+`cfg(target_os = "android")` 分支直接读 `/system/etc/security/cacerts`（Android TrustManager 用的
+同一批根证书，PEM 一文件一根）交给 `WebPkiServerVerifier`。桌面端一行行为都没变。
+放弃的是用户自装根证书和吊销检查 —— 与 launcher 那个移植同一笔交易。
+
+### 移植壳 `ports/mailcraft-android/`
+
+| 桌面（`apps/mailcraft`） | Android（移植壳） |
+|---|---|
+| `rfd` 对话框 | SAF：选中的文件拷进 `files/import/` 再以真实路径交给引擎；保存给引擎 `files/export/` 的路径，写完再 `safPublish` 到 `content://` |
+| `store::Saver` 后台线程 | 同一个 `Saver`，写 `files/mailbox.mailcraft` |
+| IMAP/SMTP `mailcraft_net::sync_with` | 同一个，后台线程 |
+| 提供方页面 OAuth 登录 | 同一套流程，页面用 `Intent.ACTION_VIEW` 打开 |
+| `keyring` 凭据库 | **无**（见缺口 1） |
+| Graph / EWS / JMAP runner | **无**（见缺口 2） |
+| `arboard` 剪贴板 | JNI `ClipboardManager`（纯文本） |
+| 附件交给系统程序打开 | 写 `files/opened/`，经 `FileProvider` 用 `ACTION_VIEW` 打开 |
+| 桌面通知、自更新、诊断日志 | 无；`development_build = true`（否则它会去装一个桌面版） |
+
+字体：MailCraft 自带 Inter/Source Sans/JetBrains Mono，之后按系统字体目录找 CJK 回退，而
+Android 上那些目录不存在 —— 壳在应用自己 `install_fonts` 之后把设备的 CJK 字脸插进**每一个族**
+（`DroidSansFallbackBBK.ttf`，实测一次成功），并用 `egui::Fonts::has_glyph` 确认 egui 真的在用它
+（`◻` 的教训：装上 ≠ 用上）。
+
+### 构建与产物
+
+```
+bash dist-repos/mailcraft-android/scripts/build-so.sh  mailcraft      # 48,569,088 B
+bash dist-repos/mailcraft-android/scripts/build-apk.sh mailcraft 0.9.0
+bash dist-repos/mailcraft-android/scripts/device-smoke.sh ...        # 装机/启动/截图
+```
+
+| 产物 | 大小 |
+|---|---|
+| `src/mailcraft/apps/mailcraft-android/jniLibs/arm64-v8a/libmain.so` | 48,569,088 B |
+| `out/MailCraft-0.9.0-android-arm64.apk` | 42,261,412 B |
+| `tzhazuma/artcraft-android` @ `android-v1` 资产 | `MailCraft-android-arm64.apk` 42,261,412 B |
+
+`build-apk.sh` 自校验：打包库 `.text` sha256 `00d48756a4fdda13…c94475f9` 与克隆里刚构建的一致
+（打包 strip 到 35,709,520 B），`zipalign -c -P 16` 通过。`aapt2`：
+
+```
+package: name='ai.storyteller.mailcraft' versionCode='1' versionName='0.9.0'
+launchable-activity: name='ai.storyteller.mailcraft.MainActivity'
+native-code: 'arm64-v8a'
+drawable/ic_launcher_foreground: type=PNG   （原版图标，不是占位矢量图）
+```
+
+`classes.dex` 里 `safPickMedia` / `ai/storyteller/mailcraft/MainActivity` 都在（上一轮「Java 没编进
+dex」的坑，这次先查）。
+
+### 真机（PA2573 / Android 16 / `192.168.0.107:33805`，已解锁）
+
+vivo 安装拦截这次只弹了「继续安装」，没有风险勾选框；按钮 bounds 从 `uiautomator dump` 现读
+（`[1160,1818][1935,1933]`），点完 `Success`。
+
+```
+$ adb shell pidof ai.storyteller.mailcraft
+8401
+$ adb shell dumpsys window | grep mCurrentFocus
+mCurrentFocus=Window{… u0 ai.storyteller.mailcraft/ai.storyteller.mailcraft.MainActivity type=1}
+
+I MailCraft: mailcraft-android: starting (MailCraft 0.9.0)
+I MailCraft: mailcraft-android: data dir /data/user/0/ai.storyteller.mailcraft/files
+I MailCraft: egui_wgpu: adapters: Vulkan Mali-G925-Immortalis MC12 (IntegratedGpu)
+I MailCraft: mailcraft-android: touch mode applied (ppp 2.5, logical 1238×826 pt)
+I MailCraft: mailcraft-android: first frame laid out, the UI is up
+I MailCraft: mailcraft-android: CJK face /system/fonts/DroidSansFallbackBBK.ttf (face 0) appended
+I MailCraft: mailcraft-android: CJK face in place after 1 try(ies)
+```
+
+截图：`shots/mailcraft-launch.png`（三次窗格 + Add Account 对话框 + 浮动输入法）、
+`shots/mailcraft-ui3.png`（收件箱 / 文件夹 / 阅读窗格，状态栏「0 items · This mailbox is on this
+device only」）、`shots/mailcraft-file-menu.png`（File 后台页：Info / Open & Export / Options /
+Signatures / About，并显示 **Kept in /data/user/0/ai.storyteller.mailcraft/files/mailbox.mailcraft,
+saved as you go**）、`shots/mailcraft-about.png`（**Version 0.9.0**）。
+
+### 这一轮的两条教训
+
+- **在缩放预览图上目测坐标会差 1.6 倍。** 我看图估的关闭按钮 (1104,300) 点空了；用 PIL 在
+  **原始 3096×2064** 截图上按深色像素找边界，实际是 `(2154,588)`（bbox 2141..2167 × 575..601），
+  一枪命中。和设备上其它轮次一样：**坐标必须从原图像素量出来，不能看图猜**。
+- **`uiautomator dump` 的 `checked` 属性要现读**（vivo 的复选框布局在有无「身份验证」footer 时不同），
+  这轮用文本/bounds 定位后点按钮一次成功。
+
+### 已知缺口（诚实清单）
+
+1. **不记住任何凭据**：没有 Android KeyStore 桥，密码/refresh token 只在本次运行的内存里。写明文文件
+   比每次重问更糟，所以 `Services::secrets = None`。
+2. **Graph / EWS / JMAP 没接**：引擎和传输层都支持，但桌面端那套编排在 `main.rs` 里有 2000+ 行
+   （`graph_sending_with`/`opened_token`/`ews_runner`/`ews_setup`），这轮不硬抄。邮件走 IMAP/SMTP
+   （含 Microsoft 365 走 IMAP + OAuth），Graph 账户在本版没有日历/联系人。
+3. **不能导入文件夹**（`FileDialogRequest::Folder`）：`content://` 树遍历没实现，单文件
+   `.eml/.mbox/.ics/.vcf` 导入正常。
+4. **剪贴板只有纯文本**（没有 HTML 那一路）。
+5. **软键盘的文字进不了 egui**：winit 0.30 的 Android 后端只转发 `InputEvent::KeyEvent`，
+   输入法的 `InputEvent::TextEvent` 落进 `_ => warn!("Unknown android activity input event")` 被丢掉
+   （`android-activity` 本身是会送 TextEvent 的，`AndroidApp::text_input_state()` 也能读到编辑器状态）。
+   键盘会弹出、中文 IME 能组合，但字符到不了窗口。**这不是 MailCraft 的 bug，是 winit 的洞**；
+   修法是在 winit 的 Android 后端把 TextEvent 变成 `WindowEvent::Ime(Ime::Commit)`（需要动共用
+   依赖，本轮没动）。在修好之前，Android 上只有「粘贴」（文本菜单的 Paste 走
+   `services.clipboard.text()`，已接）能往输入框里送字。
+6. 布局是桌面的：触摸目标 36 pt、横屏，三栏在手机上偏密。
+
+### 网站与发布
+
+- `~/android-ports/assets/apps.js`：`id: "mailcraft"`, `cat: "art"`, `tag: "邮件"`, 40 MB,
+  `0.9.0`，release 指 `android-v1`；图标 `~/android-ports/icons/mailcraft.png`（上游 1024 原图）。
+- APK 已上传 `tzhazuma/artcraft-android` 的 `android-v1`（`MailCraft-android-arm64.apk`，
+  42,261,412 B）。

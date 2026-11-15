@@ -1,0 +1,48 @@
+[package]
+name = "mailcraft-android"
+description = "MailCraft on Android: eframe + wgpu shell on GameActivity, reusing the desktop engine and egui UI"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish = false
+
+# The workspace forbids `unsafe`; the Android entry point needs `#[unsafe(no_mangle)]` and the JNI
+# bridges need it, so this crate follows the `crates/platform` precedent: `deny`, with
+# `#[allow(unsafe_code)]` on those functions only. Deliberately NOT `[lints] workspace = true`,
+# which would bring back `forbid`.
+[lints.rust]
+unsafe_code = "deny"
+
+[lints.clippy]
+dbg_macro = "warn"
+todo = "warn"
+too_many_arguments = "allow"
+type_complexity = "allow"
+neg_cmp_op_on_partial_ord = "allow"
+
+[lib]
+name = "main"
+crate-type = ["cdylib"]
+
+[target.'cfg(target_os = "android")'.dependencies]
+mailcraft-engine = { workspace = true }
+mailcraft-model = { workspace = true }
+mailcraft-time = { workspace = true }
+mailcraft-ui-egui = { workspace = true }
+# Sockets: Send/Receive (IMAP and SMTP), signing in, MX lookups, pictures in mail.
+mailcraft-net = { workspace = true }
+egui = { workspace = true }
+log = { workspace = true }
+serde_json = { workspace = true }
+# accesskit + native-activity is a hard `compile_error!` in eframe, and NativeActivity has no soft
+# keyboard/IME, so an email client full of address fields and a message body must use GameActivity.
+eframe = { workspace = true, default-features = false, features = [
+    "default_fonts",
+    "wgpu",
+    "android-game-activity",
+] }
+winit = { version = "0.30", default-features = false }
+android_logger = "0.15"
+# The Storage Access Framework, the browser and the clipboard bridges (src/saf.rs).
+jni = "0.22"
+ndk-context = "0.1"

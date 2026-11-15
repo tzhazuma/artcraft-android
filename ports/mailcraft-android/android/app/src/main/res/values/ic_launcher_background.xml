@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- MailCraft's mark is a carrier pigeon on dark red; the adaptive icon needs the same opaque
+         red behind the artwork, which is what the icon's own background is. -->
+    <color name="ic_launcher_background">#ffb3202a</color>
+</resources>

@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<paths xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- Attachments opened from a message are written into the app's own files/opened/; the
+         provider hands another program a content:// URI for exactly that folder and nothing
+         else. -->
+    <files-path name="opened" path="opened/" />
+</paths>

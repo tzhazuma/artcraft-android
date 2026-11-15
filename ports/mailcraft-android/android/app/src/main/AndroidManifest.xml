@@ -1,0 +1,95 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <!--
+        MailCraft on Android.
+
+        Package id: ai.storyteller.mailcraft. MailCraft's own bundle is
+        io.github.billsecond.mailcraft, and the ArtCraft Launcher only probes installed packages
+        whose names start with `ai.storyteller.` (MainActivity.writeInstalledApps). A community app
+        must therefore ship under an `ai.storyteller.*` id it has declared: this port declares
+        ai.storyteller.mailcraft in the launcher's catalog (former_bundles) and in
+        ANDROID_PACKAGE_IDS, so the launcher can see, launch and update it.
+
+        INTERNET is what makes it an email client: IMAP, SMTP, the OAuth sign-in and the pictures
+        in a message all open sockets. Without it every Send/Receive fails in a way that looks
+        like a broken server.
+    -->
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+
+    <!-- The window is wgpu (Vulkan), which every arm64 Android 12+ device has. -->
+    <uses-feature android:glEsVersion="0x00030000" android:required="false" />
+
+    <!-- Android 11+ package visibility: the browser for a sign-in and for a link in a message,
+         and the program that opens an attachment. -->
+    <queries>
+        <intent>
+            <action android:name="android.intent.action.VIEW" />
+            <data android:scheme="https" />
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.VIEW" />
+            <data android:scheme="http" />
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.VIEW" />
+            <data android:scheme="mailto" />
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.SEND" />
+            <data android:mimeType="*/*" />
+        </intent>
+    </queries>
+
+    <application
+        android:icon="@mipmap/ic_launcher"
+        android:label="MailCraft"
+        android:roundIcon="@mipmap/ic_launcher_round"
+        android:supportsRtl="true"
+        android:largeHeap="true"
+        android:theme="@style/ActivityTheme">
+        <!--
+            The launcher bridge: an exported MAIN/LAUNCHER activity is what the ArtCraft Launcher's
+            `getLaunchIntentForPackage("ai.storyteller.mailcraft")` resolves to, and what the
+            device's own launcher shows.
+
+            `configChanges` keeps a rotation from recreating the activity: the whole app state (the
+            session, the GPU device, the open message) lives in the Rust cdylib, which
+            android-activity does not re-create.
+
+            GameActivity, not NativeActivity: eframe's accesskit is a hard `compile_error!` with
+            native-activity, and NativeActivity has no soft keyboard — which an email client's
+            address fields and message body cannot do without.
+        -->
+        <activity
+            android:name="ai.storyteller.mailcraft.MainActivity"
+            android:configChanges="orientation|screenSize|screenLayout|keyboardHidden|density|uiMode|smallestScreenSize"
+            android:exported="true"
+            android:launchMode="singleTask"
+            android:windowSoftInputMode="adjustResize"
+            android:screenOrientation="sensorLandscape">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+
+            <!-- android-activity loads this library; it must match `[lib] name = "main"`. -->
+            <meta-data android:name="android.app.lib_name" android:value="main" />
+        </activity>
+
+        <!-- An attachment the owner opened is written into filesDir/opened/ and handed to another
+             program: a `content://` URI through this provider, because a `file://` URI is refused
+             since Android 7. -->
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="ai.storyteller.mailcraft.files"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/file_paths" />
+        </provider>
+    </application>
+
+</manifest>

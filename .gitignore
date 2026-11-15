@@ -32,3 +32,7 @@ dmg/
 
 # Per-port release staging trees (local copies of the generic scripts).
 /dist-repos/*-android/
+
+# MailCraft's upstream clone (reproducible from github.com/UCS-Care-Group/mailcraft);
+# the Android work lives in ports/ and patches/.
+/src/mailcraft/

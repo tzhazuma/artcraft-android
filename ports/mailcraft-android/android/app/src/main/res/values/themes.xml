@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <style name="ActivityTheme" parent="Theme.AppCompat.Light.NoActionBar">
+        <!-- Full-screen layout, with the window allowed to reach into a cutout: the UI is the
+             desktop layout and draws its own bars, so a system status bar would cover the ribbon. -->
+        <item name="android:windowLayoutInDisplayCutoutMode">shortEdges</item>
+        <item name="android:windowFullscreen">true</item>
+        <!-- No action bar, and no system window background flash while the GPU surface comes up. -->
+        <item name="android:windowBackground">@android:color/black</item>
+    </style>
+</resources>

@@ -1,0 +1,53 @@
+plugins {
+    id 'com.android.application'
+}
+
+android {
+    compileSdk = 35
+
+    defaultConfig {
+        // The ArtCraft Launcher only probes packages under `ai.storyteller.` (see the manifest and
+        // the README): MailCraft's own bundle (io.github.billsecond.mailcraft) would be invisible.
+        applicationId = "ai.storyteller.mailcraft"
+        minSdk = 31
+        targetSdk = 35
+        versionCode = 1
+        versionName = "0.9.0"
+    }
+
+    sourceSets {
+        main {
+            // Output of `cargo ndk -o apps/mailcraft-android/jniLibs` (one level above android/).
+            jniLibs.srcDirs = ['../../jniLibs']
+        }
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled = false
+            // Debug signing keeps the release APK directly `adb install`-able.
+            signingConfig = signingConfigs.debug
+            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+            ndk {
+                abiFilters 'arm64-v8a'
+            }
+        }
+        debug {
+            minifyEnabled false
+        }
+    }
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+    namespace = 'ai.storyteller.mailcraft'
+}
+
+dependencies {
+    implementation 'androidx.appcompat:appcompat:1.7.0'
+    // FileProvider, for handing an opened attachment to another program.
+    implementation 'androidx.core:core:1.13.1'
+    // GameActivity: the native activity with a soft keyboard/IME, and the only activity type
+    // eframe's accesskit backend compiles with.
+    implementation "androidx.games:games-activity:4.4.0"
+}
