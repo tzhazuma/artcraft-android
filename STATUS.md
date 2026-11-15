@@ -44,23 +44,18 @@ that version is installed and verified.
 
 | app | version | apk | date |
 |---|---|---|---|
-| CADCraft | 0.20.1 | `out/Cadcraft-0.20.1-android-arm64.apk` | 2026-11-13 |
-| Launcher | 0.19.2 | `out/ArtCraftLauncher-0.19.2-android-arm64.apk` | 2026-11-13 |
-| DeckCraft | 0.18.1 | `out/Deckcraft-0.18.1-android-arm64.apk` | 2026-11-13 |
-| DesignCraft | 0.20.1 | `out/Designcraft-0.20.1-android-arm64.apk` | 2026-11-13 |
-| FigCraft | 0.18.1 | `out/FigCraft-0.18.1-android-arm64.apk` | 2026-11-13 |
-| GridCraft | 0.19.1 | `out/GridCraft-0.19.1-android-arm64.apk` | 2026-11-13 |
-| SolidCraft | 0.40.1 | `out/SolidCraft-0.40.1-android-arm64.apk` | 2026-11-13 |
-| SoundCraft | 0.20.1 | `out/SoundCraft-0.20.1-android-arm64.apk` | 2026-11-13 |
-| VectorCraft | 0.24.1 | `out/VectorCraft-0.24.1-android-arm64.apk` | 2026-11-13 |
-| WordCraft | 0.18.1 | `out/Wordcraft-0.18.1-android-arm64.apk` | 2026-11-13 |
 
-2026-11-13: all ten apps moved upstream at once and every one is built, committed and published —
-but **none has been installed**. The phone is on `10.4.197.178:33835` while the Mac is on
-`10.4.194.118`, and the intervening network accepts *every* TCP connection (ports 9999 and 12345
-both answer), so `adb connect` reports success and then `offline` — the connection never reaches a
-real adb daemon. Reachability checks are meaningless on that path; the phone needs to be on the
-Mac's subnet, or on USB.
+_(empty — every published APK has been installed and verified on the PA2573)_
+
+2026-11-16: all ten 2026-11-13 builds plus SolidCraft 0.42.0 were installed over wireless debugging at
+`192.168.0.107:33805` and every `dumpsys package` matches (10/10). Three of them were also launched:
+
+* **SolidCraft 0.42.0** renders and its CJK face works — logcat shows
+  `present=true has_glyph=true families=5 ["plex-sans","Ubuntu-Light","egui-icons","cjk_fallback"]`
+  and the About badge reads v0.42.0. This is the first time a 0.4x build has been seen on hardware.
+* **The launcher 0.19.2** lists every installed app at the right version and renders its Chinese UI
+  (打开 / 搜索应用 / 计算机辅助设计与制图).
+* The rest report the right version and were left closed.
 
 SolidCraft 0.40.1 is the one to verify first when it is back: 0.30.1 -> 0.40.1 is 7226 commits, the
 CJK font fix survived the merge (13 `cjk_works`/`CJK_FACE` sites), but nobody has seen it render
