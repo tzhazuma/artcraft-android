@@ -2331,7 +2331,7 @@ bash dist-repos/mailcraft-android/scripts/device-smoke.sh ...        # 装机/�
 | `out/MailCraft-0.9.0-android-arm64.apk` | 42,261,412 B |
 | `tzhazuma/artcraft-android` @ `android-v1` 资产 | `MailCraft-android-arm64.apk` 42,261,412 B |
 
-`build-apk.sh` 自校验：打包库 `.text` sha256 `00d48756a4fdda13…c94475f9` 与克隆里刚构建的一致
+`build-apk.sh` 自校验：打包库 `.text` sha256 `0abba394d222167b…396481d6` 与克隆里刚构建的一致
 （打包 strip 到 35,709,520 B），`zipalign -c -P 16` 通过。`aapt2`：
 
 ```
@@ -2364,11 +2364,28 @@ I MailCraft: mailcraft-android: CJK face /system/fonts/DroidSansFallbackBBK.ttf 
 I MailCraft: mailcraft-android: CJK face in place after 1 try(ies)
 ```
 
-截图：`shots/mailcraft-launch.png`（三次窗格 + Add Account 对话框 + 浮动输入法）、
+截图：`shots/mailcraft-relaunch.png`（两次装机后的三次窗格 + Add Account 对话框）、
 `shots/mailcraft-ui3.png`（收件箱 / 文件夹 / 阅读窗格，状态栏「0 items · This mailbox is on this
 device only」）、`shots/mailcraft-file-menu.png`（File 后台页：Info / Open & Export / Options /
 Signatures / About，并显示 **Kept in /data/user/0/ai.storyteller.mailcraft/files/mailbox.mailcraft,
 saved as you go**）、`shots/mailcraft-about.png`（**Version 0.9.0**）。
+
+### launcher 侧：包名规则真的生效了（重建 + 重装验证）
+
+只改源码不算验证。`build-so.sh craft-launcher`（24,101,696 B）+ `build-apk.sh craft-launcher`
+（26,742,378 B，`.text` `6404a4d3a6f47e72…`），装到真机后**launcher 的网格里出现 MailCraft
+v0.9.0「邮件、日历和联系人 / 由 UCS CARE GROUP 提供」，按钮是「打开」而不是「此平台不可用」** ——
+`shots/launcher-mailcraft.png`。这就是四处接线的证据：探测数组、`<queries>`、`ANDROID_PACKAGE_IDS`、
+catalog 的 `former_bundles`，少一处这里就会是「未安装 / 此平台不可用」。
+
+**踩到的坑**：`build-so.sh` 的 rsync 是 `--delete`，而 `ports/craft-launcher-android/` **没有
+`android/` 目录**（launcher 的 Gradle 壳只在 clone 里），于是它把 clone 的整个
+`apps/craft-launcher-android/android/` 删掉了（`.gitignore`/manifest/Java 全没）。`git checkout --`
+从刚提交的 commit 恢复后重打包即可 —— 但这说明「ports/ 是 source of truth」这条规则对 launcher
+不成立，下次要么给 ports 补上壳，要么别在 launcher 上跑这个脚本。
+
+launcher 的 APK 也已替换 `android-v1` 的 `ArtCraftLauncher-android-arm64.apk`（同 0.19.2，内容里多了
+MailCraft 的探测）。
 
 ### 这一轮的两条教训
 
@@ -2402,4 +2419,4 @@ saved as you go**）、`shots/mailcraft-about.png`（**Version 0.9.0**）。
 - `~/android-ports/assets/apps.js`：`id: "mailcraft"`, `cat: "art"`, `tag: "邮件"`, 40 MB,
   `0.9.0`，release 指 `android-v1`；图标 `~/android-ports/icons/mailcraft.png`（上游 1024 原图）。
 - APK 已上传 `tzhazuma/artcraft-android` 的 `android-v1`（`MailCraft-android-arm64.apk`，
-  42,261,412 B）。
+  42,261,412 B）；launcher 的 APK 同批替换（26,742,378 B）。
