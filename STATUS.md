@@ -2455,6 +2455,20 @@ MailCraft 的探测）。
 | 0.9.1（朴素 commit） | `aaababcabauu…`，**每字符重复** |
 | 0.9.5（增量 + 删除合成） | `abc` / `abc@ex.com` / `abcdef` / `user@mail.cn`，**精确无重复** |
 
+### 增量逻辑现在有本机可执行的测试
+
+`ime_delta` 从 `platform_impl::android`（只在 Android 编译）移到 crate 根，所以规则能在本机验证：
+
+```
+cargo test --lib ime_delta   → 5 passed
+```
+
+测的是四条规则，其中两条是容易搞错的：
+
+- **删除按字符数算，不是字节数** —— 一个 emoji 是一个退格而不是四个（UTF-8 会说四个）
+- **既不是尾部追加也不是尾部删除的编辑，报 `Replace` 并什么都不发** —— 猜一个中间替换会破坏
+  输入框内容，保持沉默等下一次编辑重新同步更安全
+
 ### ⚠️ 未验证：退格
 
 `input keyevent KEYCODE_DEL` 删不掉；合成路径只在输入法报告缓冲区变短时触发，而我没能触发成功。
