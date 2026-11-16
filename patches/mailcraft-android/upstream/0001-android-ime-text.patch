@@ -1,6 +1,21 @@
-diff -ruN base/src/ime_delta.rs final/src/ime_delta.rs
+diff -ruN base2/Cargo.toml final2/Cargo.toml
+--- a/Cargo.toml	2026-11-16 17:46:25.840675190 +0800
++++ b/Cargo.toml	2026-11-16 17:46:25.998809072 +0800
+@@ -97,7 +97,10 @@
+ ], optional = true }
+ serde = { workspace = true, optional = true }
+ smol_str = "0.2.0"
+-tracing = { version = "0.1.40", default-features = false }
++# MailCraft: `log` forwards tracing events to the `log` crate, which is what android_logger
++# installs. Without it every winit diagnostic -- including the IME ones -- is discarded on a device,
++# which is how a silent "no key events arriving" conclusion got drawn from a probe that never ran.
++tracing = { version = "0.1.40", default-features = false, features = ["log"] }
+ 
+ [dev-dependencies]
+ image = { version = "0.25.0", default-features = false, features = ["png"] }
+diff -ruN base2/src/ime_delta.rs final2/src/ime_delta.rs
 --- a/src/ime_delta.rs	1970-01-01 08:00:00.000000000 +0800
-+++ b/src/ime_delta.rs	2026-11-16 16:56:48.519359709 +0800
++++ b/src/ime_delta.rs	2026-11-16 17:46:27.915140153 +0800
 @@ -0,0 +1,74 @@
 +//! Differencing for Android IME text reports.
 +//!
@@ -76,9 +91,9 @@ diff -ruN base/src/ime_delta.rs final/src/ime_delta.rs
 +        assert_eq!(ime_delta("abc", "xyz"), ImeDelta::Replace);
 +    }
 +}
-diff -ruN base/src/lib.rs final/src/lib.rs
---- a/src/lib.rs	2026-11-16 16:56:46.725762796 +0800
-+++ b/src/lib.rs	2026-11-16 16:56:48.528410430 +0800
+diff -ruN base2/src/lib.rs final2/src/lib.rs
+--- a/src/lib.rs	2026-11-16 17:46:25.903140574 +0800
++++ b/src/lib.rs	2026-11-16 17:46:27.925117716 +0800
 @@ -206,6 +206,7 @@
  pub mod error;
  mod cursor;
@@ -87,9 +102,18 @@ diff -ruN base/src/lib.rs final/src/lib.rs
  pub mod event_loop;
  mod icon;
  pub mod keyboard;
-diff -ruN base/src/platform_impl/android/mod.rs final/src/platform_impl/android/mod.rs
---- a/src/platform_impl/android/mod.rs	2026-11-16 16:56:46.797071937 +0800
-+++ b/src/platform_impl/android/mod.rs	2026-11-16 16:56:48.596257108 +0800
+diff -ruN base2/src/platform_impl/android/mod.rs final2/src/platform_impl/android/mod.rs
+--- a/src/platform_impl/android/mod.rs	2026-11-16 17:46:25.971831264 +0800
++++ b/src/platform_impl/android/mod.rs	2026-11-16 17:46:27.988278810 +0800
+@@ -10,7 +10,7 @@
+ use android_activity::{
+     AndroidApp, AndroidAppWaker, ConfigurationRef, InputStatus, MainEvent, Rect,
+ };
+-use tracing::{debug, trace, warn};
++use tracing::{debug, info, trace, warn};
+ 
+ use crate::cursor::Cursor;
+ use crate::dpi::{PhysicalPosition, PhysicalSize, Position, Size};
 @@ -143,8 +143,12 @@
      cause: StartCause,
      ignore_volume_keys: bool,
@@ -111,7 +135,7 @@ diff -ruN base/src/platform_impl/android/mod.rs final/src/platform_impl/android/
          })
      }
  
-@@ -473,6 +478,91 @@
+@@ -473,6 +478,115 @@
                      },
                  }
              },
@@ -126,7 +150,23 @@ diff -ruN base/src/platform_impl/android/mod.rs final/src/platform_impl/android/
 +                // GameActivity reports the whole editing buffer on every change, not the edit itself,
 +                // so it has to be differenced before it can be delivered as events.
 +                let window_id = window::WindowId(WindowId);
-+                match crate::ime_delta::ime_delta(&self.ime_text_seen, &state.text) {
++                let delta = crate::ime_delta::ime_delta(&self.ime_text_seen, &state.text);
++                // Info, not Debug: this port's logger is capped at Info, and this line is the only
++                // way to see what the IME actually reports on a device. It fires once per real
++                // change, so it stays quiet while the user reads. `compose` matters because a CJK
++                // keyboard keeps a composing region until the word is chosen.
++                // Only when the buffer actually moved: the IME re-reports the same text when a
++                // composition is committed, and two lines per keystroke is noise nobody reads.
++                if state.text != self.ime_text_seen {
++                    info!(
++                        "ime text: {} -> {} chars, delta={:?}, compose={:?}",
++                        self.ime_text_seen.chars().count(),
++                        state.text.chars().count(),
++                        delta,
++                        state.compose_region,
++                    );
++                }
++                match delta {
 +                    crate::ime_delta::ImeDelta::Append(added) => {
 +                        // winit's IME contract is that a commit is preceded by an empty preedit,
 +                        // which clears any composing underline left by the previous event.
@@ -171,7 +211,15 @@ diff -ruN base/src/platform_impl/android/mod.rs final/src/platform_impl/android/
 +                                            text: None,
 +                                            platform_specific: KeyEventExtra {},
 +                                        },
-+                                        is_synthetic: true,
++                                        // NOT synthetic, even though winit did not read it off a
++                                        // keyboard: egui-winit deliberately drops synthetic presses
++                                        // (they are winit's focus-change artifacts), and marking this
++                                        // one that way meant every IME deletion was thrown away one
++                                        // layer above us -- the delta was detected, a Backspace was
++                                        // emitted, and the character still never disappeared. The
++                                        // press is real from the user's side: they pressed delete and
++                                        // the IME performed it.
++                                        is_synthetic: false,
 +                                    },
 +                                },
 +                                self.window_target(),
@@ -203,7 +251,7 @@ diff -ruN base/src/platform_impl/android/mod.rs final/src/platform_impl/android/
              _ => {
                  warn!("Unknown android_activity input event {event:?}")
              },
-@@ -1139,3 +1229,4 @@
+@@ -1139,3 +1253,4 @@
          self.monitor.clone()
      }
  }
