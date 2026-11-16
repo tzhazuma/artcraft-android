@@ -1,6 +1,96 @@
---- a/src/platform_impl/android/mod.rs
-+++ b/src/platform_impl/android/mod.rs
-@@ -143,6 +143,9 @@
+diff -ruN base/src/ime_delta.rs final/src/ime_delta.rs
+--- a/src/ime_delta.rs	1970-01-01 08:00:00.000000000 +0800
++++ b/src/ime_delta.rs	2026-11-16 16:56:48.519359709 +0800
+@@ -0,0 +1,74 @@
++//! Differencing for Android IME text reports.
++//!
++//! `android_activity` reports the whole editing buffer on every change, never the edit, so the
++//! difference has to be computed before it can be delivered as winit events. This lives outside
++//! `platform_impl::android` so the rules can be exercised on any host, not only on a device.
++
++/// What one `TextEvent` means relative to the text already delivered.
++///
++/// `android_activity` reports the whole editing buffer each time, so the difference is what carries
++/// meaning. Kept as a free function with no Android types so the rules can be tested on the host.
++#[derive(Debug, PartialEq, Eq)]
++pub(crate) enum ImeDelta {
++    Append(String),
++    Delete(usize),
++    /// The edit is not expressible as an append or a tail deletion.
++    Replace,
++}
++
++pub(crate) fn ime_delta(previous: &str, current: &str) -> ImeDelta {
++    if current == previous {
++        return ImeDelta::Replace;
++    }
++    if let Some(added) = current.strip_prefix(previous) {
++        return ImeDelta::Append(added.to_owned());
++    }
++    if let Some(removed) = previous.strip_prefix(current) {
++        return ImeDelta::Delete(removed.chars().count());
++    }
++    ImeDelta::Replace
++}
++
++
++#[cfg(test)]
++mod ime_delta_tests {
++    use super::{ime_delta, ImeDelta};
++
++    /// The event that broke typing: the buffer grows by one character per keystroke and each report
++    /// contains everything typed so far. Only the new tail may be committed.
++    #[test]
++    fn typing_commits_only_the_new_tail() {
++        assert_eq!(ime_delta("", "a"), ImeDelta::Append("a".into()));
++        assert_eq!(ime_delta("a", "ab"), ImeDelta::Append("b".into()));
++        assert_eq!(ime_delta("ab", "abc"), ImeDelta::Append("c".into()));
++        // Without the difference, "abc" would be inserted three times over.
++        assert_eq!(ime_delta("abc", "abcd"), ImeDelta::Append("d".into()));
++    }
++
++    #[test]
++    fn a_whole_word_arrives_at_once() {
++        assert_eq!(ime_delta("", "hello"), ImeDelta::Append("hello".into()));
++    }
++
++    #[test]
++    fn deleting_the_tail_asks_for_that_many_backspaces() {
++        assert_eq!(ime_delta("abc", "ab"), ImeDelta::Delete(1));
++        assert_eq!(ime_delta("abcd", "ab"), ImeDelta::Delete(2));
++        assert_eq!(ime_delta("abc", ""), ImeDelta::Delete(3));
++    }
++
++    /// Counted in characters, not bytes: a deleted emoji is one backspace, not four.
++    #[test]
++    fn deletion_counts_characters_not_bytes() {
++        assert_eq!(ime_delta("a😀", "a"), ImeDelta::Delete(1));
++        assert_eq!(ime_delta("中文", "中"), ImeDelta::Delete(1));
++    }
++
++    /// An edit in the middle cannot be expressed, and guessing would corrupt the field.
++    #[test]
++    fn a_replacement_is_left_alone() {
++        assert_eq!(ime_delta("abc", "axc"), ImeDelta::Replace);
++        assert_eq!(ime_delta("abc", "abc"), ImeDelta::Replace);
++        assert_eq!(ime_delta("abc", "xyz"), ImeDelta::Replace);
++    }
++}
+diff -ruN base/src/lib.rs final/src/lib.rs
+--- a/src/lib.rs	2026-11-16 16:56:46.725762796 +0800
++++ b/src/lib.rs	2026-11-16 16:56:48.528410430 +0800
+@@ -206,6 +206,7 @@
+ pub mod error;
+ mod cursor;
+ pub mod event;
++mod ime_delta;
+ pub mod event_loop;
+ mod icon;
+ pub mod keyboard;
+diff -ruN base/src/platform_impl/android/mod.rs final/src/platform_impl/android/mod.rs
+--- a/src/platform_impl/android/mod.rs	2026-11-16 16:56:46.797071937 +0800
++++ b/src/platform_impl/android/mod.rs	2026-11-16 16:56:48.596257108 +0800
+@@ -143,8 +143,12 @@
      cause: StartCause,
      ignore_volume_keys: bool,
      combining_accent: Option<char>,
@@ -9,8 +99,11 @@
 +    ime_text_seen: String,
  }
  
++
  #[derive(Debug, Clone, PartialEq)]
-@@ -192,6 +195,7 @@
+ pub(crate) struct PlatformSpecificEventLoopAttributes {
+     pub(crate) android_app: Option<AndroidApp>,
+@@ -192,6 +196,7 @@
              cause: StartCause::Init,
              ignore_volume_keys: attributes.ignore_volume_keys,
              combining_accent: None,
@@ -18,7 +111,7 @@
          })
      }
  
-@@ -473,6 +477,99 @@
+@@ -473,6 +478,91 @@
                      },
                  }
              },
@@ -30,72 +123,64 @@
 +            // `WindowEvent::Ime(Ime::Commit)` is what egui/eframe insert text from, so forwarding
 +            // it here fixes the keyboard at the owner instead of patching the app.
 +            InputEvent::TextEvent(state) => {
-+                // GameActivity reports the whole editing buffer on every change, not the edit. Sending
-+                // that verbatim as `Ime::Commit` inserts the entire buffer again on each keystroke --
-+                // typing "abc" produced "aababc". Only the part past what was already delivered is
-+                // new, so the common prefix is skipped.
++                // GameActivity reports the whole editing buffer on every change, not the edit itself,
++                // so it has to be differenced before it can be delivered as events.
 +                let window_id = window::WindowId(WindowId);
-+                let previous = &self.ime_text_seen;
-+                let common = previous
-+                    .bytes()
-+                    .zip(state.text.bytes())
-+                    .take_while(|(a, b)| a == b)
-+                    .count();
-+                // A shorter report means the field was cleared, replaced or lost focus. Nothing can
-+                // be delivered for a deletion (winit has no such event), but the cursor bookkeeping
-+                // has to follow the new buffer or the next keystroke would replay stale text.
-+                let added = if state.text.len() >= previous.len() {
-+                    &state.text[common..]
-+                } else {
-+                    ""
-+                };
-+                // A shorter buffer is the IME deleting through the input connection. winit has no
-+                // deletion event, and egui only removes text on a Backspace key, so one is
-+                // synthesised per removed character -- without this a typo can be typed but never
-+                // corrected. Only the tail past the common prefix is removed, which is where a
-+                // soft keyboard deletes.
-+                if state.text.len() < previous.len() {
-+                    for _ in common..previous.len() {
++                match crate::ime_delta::ime_delta(&self.ime_text_seen, &state.text) {
++                    crate::ime_delta::ImeDelta::Append(added) => {
++                        // winit's IME contract is that a commit is preceded by an empty preedit,
++                        // which clears any composing underline left by the previous event.
 +                        callback(
 +                            event::Event::WindowEvent {
 +                                window_id,
-+                                event: event::WindowEvent::KeyboardInput {
-+                                    device_id: event::DeviceId(DeviceId(0)),
-+                                    event: event::KeyEvent {
-+                                        state: event::ElementState::Pressed,
-+                                        logical_key: crate::keyboard::Key::Named(crate::keyboard::NamedKey::Backspace),
-+                                        physical_key: crate::keyboard::PhysicalKey::Code(
-+                                            crate::keyboard::KeyCode::Backspace,
-+                                        ),
-+                                        location: crate::keyboard::KeyLocation::Standard,
-+                                        repeat: false,
-+                                        text: None,
-+                                        platform_specific: KeyEventExtra {},
-+                                    },
-+                                    is_synthetic: true,
-+                                },
++                                event: event::WindowEvent::Ime(event::Ime::Preedit(
++                                    String::new(),
++                                    None,
++                                )),
 +                            },
 +                            self.window_target(),
 +                        );
-+                    }
-+                }
-+                if !added.is_empty() {
-+                    // winit's IME contract is that a commit is preceded by an empty preedit, which
-+                    // clears any composing underline left by the previous event.
-+                    callback(
-+                        event::Event::WindowEvent {
-+                            window_id,
-+                            event: event::WindowEvent::Ime(event::Ime::Preedit(String::new(), None)),
-+                        },
-+                        self.window_target(),
-+                    );
-+                    callback(
-+                        event::Event::WindowEvent {
-+                            window_id,
-+                            event: event::WindowEvent::Ime(event::Ime::Commit(added.to_owned())),
-+                        },
-+                        self.window_target(),
-+                    );
++                        callback(
++                            event::Event::WindowEvent {
++                                window_id,
++                                event: event::WindowEvent::Ime(event::Ime::Commit(added)),
++                            },
++                            self.window_target(),
++                        );
++                    },
++                    // The IME deleted through the input connection. winit has no deletion event and
++                    // egui only removes text on a Backspace key press, so one is synthesised per
++                    // removed character -- without this a typo can be typed but never corrected.
++                    crate::ime_delta::ImeDelta::Delete(count) => {
++                        for _ in 0..count {
++                            callback(
++                                event::Event::WindowEvent {
++                                    window_id,
++                                    event: event::WindowEvent::KeyboardInput {
++                                        device_id: event::DeviceId(DeviceId(0)),
++                                        event: event::KeyEvent {
++                                            state: event::ElementState::Pressed,
++                                            logical_key: crate::keyboard::Key::Named(
++                                                crate::keyboard::NamedKey::Backspace,
++                                            ),
++                                            physical_key: crate::keyboard::PhysicalKey::Code(
++                                                crate::keyboard::KeyCode::Backspace,
++                                            ),
++                                            location: crate::keyboard::KeyLocation::Standard,
++                                            repeat: false,
++                                            text: None,
++                                            platform_specific: KeyEventExtra {},
++                                        },
++                                        is_synthetic: true,
++                                    },
++                                },
++                                self.window_target(),
++                            );
++                        }
++                    },
++                    // A replacement in the middle cannot be expressed as an append or a deletion;
++                    // saying nothing keeps the field intact and lets the next edit resynchronise.
++                    crate::ime_delta::ImeDelta::Replace => {},
 +                }
 +                if let Some(region) = state.compose_region {
 +                    // Keep the composing underline in step with the IME's own idea of it; the text
@@ -118,3 +203,8 @@
              _ => {
                  warn!("Unknown android_activity input event {event:?}")
              },
+@@ -1139,3 +1229,4 @@
+         self.monitor.clone()
+     }
+ }
++
