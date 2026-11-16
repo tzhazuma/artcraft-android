@@ -1,0 +1,120 @@
+--- a/src/platform_impl/android/mod.rs
++++ b/src/platform_impl/android/mod.rs
+@@ -143,6 +143,9 @@
+     cause: StartCause,
+     ignore_volume_keys: bool,
+     combining_accent: Option<char>,
++    /// MailCraft: the text the IME last reported, so `TextEvent` can be turned into a delta.
++    /// `android_activity` delivers the *whole* editing buffer every time, not what changed.
++    ime_text_seen: String,
+ }
+ 
+ #[derive(Debug, Clone, PartialEq)]
+@@ -192,6 +195,7 @@
+             cause: StartCause::Init,
+             ignore_volume_keys: attributes.ignore_volume_keys,
+             combining_accent: None,
++            ime_text_seen: String::new(),
+         })
+     }
+ 
+@@ -473,6 +477,99 @@
+                     },
+                 }
+             },
++            // MailCraft: GameActivity delivers the soft keyboard's committed text here, and winit
++            // 0.30 had no arm for it -- every character typed on an on-screen keyboard fell into
++            // the `_ => warn!` catch-all below and was dropped. Hardware keys still arrived through
++            // `KeyEvent`, so this presented as a keyboard-specific bug rather than a missing event.
++            //
++            // `WindowEvent::Ime(Ime::Commit)` is what egui/eframe insert text from, so forwarding
++            // it here fixes the keyboard at the owner instead of patching the app.
++            InputEvent::TextEvent(state) => {
++                // GameActivity reports the whole editing buffer on every change, not the edit. Sending
++                // that verbatim as `Ime::Commit` inserts the entire buffer again on each keystroke --
++                // typing "abc" produced "aababc". Only the part past what was already delivered is
++                // new, so the common prefix is skipped.
++                let window_id = window::WindowId(WindowId);
++                let previous = &self.ime_text_seen;
++                let common = previous
++                    .bytes()
++                    .zip(state.text.bytes())
++                    .take_while(|(a, b)| a == b)
++                    .count();
++                // A shorter report means the field was cleared, replaced or lost focus. Nothing can
++                // be delivered for a deletion (winit has no such event), but the cursor bookkeeping
++                // has to follow the new buffer or the next keystroke would replay stale text.
++                let added = if state.text.len() >= previous.len() {
++                    &state.text[common..]
++                } else {
++                    ""
++                };
++                // A shorter buffer is the IME deleting through the input connection. winit has no
++                // deletion event, and egui only removes text on a Backspace key, so one is
++                // synthesised per removed character -- without this a typo can be typed but never
++                // corrected. Only the tail past the common prefix is removed, which is where a
++                // soft keyboard deletes.
++                if state.text.len() < previous.len() {
++                    for _ in common..previous.len() {
++                        callback(
++                            event::Event::WindowEvent {
++                                window_id,
++                                event: event::WindowEvent::KeyboardInput {
++                                    device_id: event::DeviceId(DeviceId(0)),
++                                    event: event::KeyEvent {
++                                        state: event::ElementState::Pressed,
++                                        logical_key: crate::keyboard::Key::Named(crate::keyboard::NamedKey::Backspace),
++                                        physical_key: crate::keyboard::PhysicalKey::Code(
++                                            crate::keyboard::KeyCode::Backspace,
++                                        ),
++                                        location: crate::keyboard::KeyLocation::Standard,
++                                        repeat: false,
++                                        text: None,
++                                        platform_specific: KeyEventExtra {},
++                                    },
++                                    is_synthetic: true,
++                                },
++                            },
++                            self.window_target(),
++                        );
++                    }
++                }
++                if !added.is_empty() {
++                    // winit's IME contract is that a commit is preceded by an empty preedit, which
++                    // clears any composing underline left by the previous event.
++                    callback(
++                        event::Event::WindowEvent {
++                            window_id,
++                            event: event::WindowEvent::Ime(event::Ime::Preedit(String::new(), None)),
++                        },
++                        self.window_target(),
++                    );
++                    callback(
++                        event::Event::WindowEvent {
++                            window_id,
++                            event: event::WindowEvent::Ime(event::Ime::Commit(added.to_owned())),
++                        },
++                        self.window_target(),
++                    );
++                }
++                if let Some(region) = state.compose_region {
++                    // Keep the composing underline in step with the IME's own idea of it; the text
++                    // itself was already delivered above, so this is display only.
++                    let start = region.start.min(state.text.len());
++                    let end = region.end.min(state.text.len());
++                    callback(
++                        event::Event::WindowEvent {
++                            window_id,
++                            event: event::WindowEvent::Ime(event::Ime::Preedit(
++                                state.text[start..end].to_owned(),
++                                Some((0, end - start)),
++                            )),
++                        },
++                        self.window_target(),
++                    );
++                }
++                self.ime_text_seen = state.text.clone();
++            },
+             _ => {
+                 warn!("Unknown android_activity input event {event:?}")
+             },
