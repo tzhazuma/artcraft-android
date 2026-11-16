@@ -2469,8 +2469,30 @@ cargo test --lib ime_delta   → 5 passed
 - **既不是尾部追加也不是尾部删除的编辑，报 `Replace` 并什么都不发** —— 猜一个中间替换会破坏
   输入框内容，保持沉默等下一次编辑重新同步更安全
 
-### ⚠️ 未验证：退格
+### ✅ 退格已修复并验证（2026-11-16，MailCraft 1.0.0）
 
-`input keyevent KEYCODE_DEL` 删不掉；合成路径只在输入法报告缓冲区变短时触发，而我没能触发成功。
-设备默认输入法是 `com.vivo.ai.ime.pad`，这次会话里它的键盘 UI 始终没渲染出来，因此也没法做人工
-敲字测试。**这条记为已知缺口，不当作已修复。**
+修好打字之后退格仍然无效，原因有两个，只有第一个能从代码看出来：
+
+1. **`is_synthetic: true` 让合成的 Backspace 变成空操作。** egui-winit 会主动丢弃 synthetic
+   按键（那是 winit 在窗口焦点变化时自己发的假事件）。我按"I 不是从键盘读到的"设了 true，结果
+   删除事件在上一层层被丢掉。从用户角度这是真实按键 —— 他按了删除、输入法执行了 —— 改回 false。
+
+2. **winit 的日志根本看不见，差点让我误判。** winit 用 `tracing`，而它的主依赖没开 `log`
+   feature，所以所有事件在 android_logger 之前就被丢弃。我加的探针什么都没打印，于是"KeyEvent
+   没到"这个结论一度被当成事实。现在开了 feature，并有一行 Info 日志报告每次缓冲区变化。
+
+真机验证（读屏核对）：
+
+| 操作 | 字段内容 |
+|---|---|
+| 输入 `abcde` | `abcde` |
+| 两次退格 | `abc` |
+| 再三次退格 | 空 |
+| 输入 `user@mail.cn` | `user@mail.cn` |
+| 输入 `abcdef` → 三次退格 → 输入 `xyz` | `abcxyz` |
+
+logcat 还暴露了一个关键事实：**输入法会整词提交**，所以必须做差分而不能假设"一次一个字符"：
+
+```
+ime text: 2 -> 5 chars, delta=Append("cde")
+ime text: 5 -> 4 chars, delta=Delete(1)
