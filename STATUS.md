@@ -2424,3 +2424,39 @@ MailCraft 的探测）。
   `0.9.0`，release 指 `android-v1`；图标 `~/android-ports/icons/mailcraft.png`（上游 1024 原图）。
 - APK 已上传 `tzhazuma/artcraft-android` 的 `android-v1`（`MailCraft-android-arm64.apk`，
   42,261,412 B）；launcher 的 APK 同批替换（26,742,378 B）。
+
+---
+
+## 2026-11-16 — MailCraft 键盘输入
+
+**打字不可用的根因在 winit，不在 MailCraft。** Android 上 GameActivity 把输入法提交的文本作为
+`InputEvent::TextEvent` 交付，而 winit 0.30 没有这个分支，全部落进
+`_ => warn!("Unknown android_activity input event")`。硬件按键仍走 `KeyEvent`，所以这看起来像
+"某个键盘不好用"，而不是"少处理了一个事件"。
+
+修法：vendor winit（`vendor/winit`，由 `patches/mailcraft-android/upstream/setup-winit-ime.sh`
+幂等接入，build-so 每次自动执行），把 `TextEvent` 转成 `WindowEvent::Ime(Ime::Commit)`。
+
+### 两次失败都产生了"看起来合理"的输出
+
+1. **直接把 `state.text` 当 commit** —— `TextInputState` 是**整个编辑缓冲区**而不是这次编辑，
+   每敲一个键就把全部内容重插一遍。输入 `abc` 得到 `aababc`。现在跳过与已交付内容的公共前缀，
+   只送新增后缀。
+2. **删除需要单独翻译** —— 缓冲区变短代表输入法通过输入连接删字，而 winit 没有删除事件，所以
+   按删掉的字数合成 Backspace `KeyboardInput`。没有这一步，打错字改不回来。
+
+### 真机验证（PA2573）
+
+在 Add Account 的邮箱框里输入并读屏核对：
+
+| 版本 | 结果 |
+|---|---|
+| 0.9.0（无补丁） | 字段保持占位符，**一个字都没进去** |
+| 0.9.1（朴素 commit） | `aaababcabauu…`，**每字符重复** |
+| 0.9.5（增量 + 删除合成） | `abc` / `abc@ex.com` / `abcdef` / `user@mail.cn`，**精确无重复** |
+
+### ⚠️ 未验证：退格
+
+`input keyevent KEYCODE_DEL` 删不掉；合成路径只在输入法报告缓冲区变短时触发，而我没能触发成功。
+设备默认输入法是 `com.vivo.ai.ime.pad`，这次会话里它的键盘 UI 始终没渲染出来，因此也没法做人工
+敲字测试。**这条记为已知缺口，不当作已修复。**
