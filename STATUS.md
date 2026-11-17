@@ -2679,4 +2679,20 @@ ime text: 5 -> 8 chars, delta=Append("xyz")
    没显式开 `android-game-activity`，依赖 eframe 透传。可以试试显式加上；
 3. 对比两个 GameActivity Java shell 的差异。
 
-**SolidCraft 还谈不上"修好了" —— 它现在能启动、能建模，但打不了字。**
+### ✅ 更正：SolidCraft 的输入其实一直是好的
+
+**上一节的结论是错的。** 用户实机敲字后截图显示搜索框里有 `qoorfophh`，并提示
+`No command matches 'qoorfophh'` —— 输入完全正常。我随后注入 `revolve`，它被正确插到光标处，
+变成 `revolve oordfophhn`；再用 DEL 删除再输入，得到 `hole oordfophhn`。打字和删除都正常。
+
+错在三个地方，都是验证方法的问题：
+
+1. **`adb shell input text` 不提交。** 这台设备用 Google 中文输入法，注入的字留在组合状态，
+   不按 Enter 或点候选词就不会 commitText 给应用。我一度把它当成"应用收不到文本"。
+2. **坐标是猜的。** 搜索框的位置我按截图比例估算，好几次根本没点中，于是"键盘弹出了但没反应"。
+3. **把"没有日志"当成"没有事件"。** 这是最关键的一条：SolidCraft 的 winit `warn!` 能显示
+   （`TODO: handle Android InsetsChanged`），但 `info!` 不显示，而我的 `ime text:` 正是 `info!`。
+   两个应用的 tracing 声明完全一样（`default-features = false, features = ["log"]`），
+   但 SolidCraft 的 `info!` 就是不出来 —— 原因还没查清，但**它不是功能问题**。
+
+教训：**不能把"日志里没有"当作"运行时没有"**，尤其当日志级别和转发链路都没验证过的时候。
