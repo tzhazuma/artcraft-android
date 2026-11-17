@@ -2496,3 +2496,62 @@ logcat 还暴露了一个关键事实：**输入法会整词提交**，所以必
 ```
 ime text: 2 -> 5 chars, delta=Append("cde")
 ime text: 5 -> 4 chars, delta=Delete(1)
+
+---
+
+## 2026-11-17 — 把 IME 修复推广到全部移植
+
+MailCraft 修好键盘之后，同样的缺陷在其余九个应用里也存在。这不是推测，有两条证据：
+
+- **两个 winit checkout 里 `TextEvent` 出现次数都是 0** —— storytold fork（八个 craft 应用钉的
+  那个）和 UCS fork（MailCraft 钉的那个）都没有这个分支
+- **它们的 Android 后端是同一个文件，只差 5 行**（`reset_ime` 桩），所以一份补丁两边都适用
+
+### 做法：一份补丁，而不是九份 crate 副本
+
+```
+patches/winit-android-ime/
+├── 0001-android-ime-text.patch   (258 行)
+└── setup-winit-ime.sh            (幂等)
+```
+
+脚本从 cargo 已有的 checkout 取源码（不走网络）、拷到 `<clone>/vendor/winit`、打补丁、把
+workspace manifest 改成 path 依赖。总共 **20 KB**，替代了九份 4.1 MB 的 vendored crate。
+
+删掉 `src/cadcraft/vendor` 后重跑脚本验证过：补丁正确应用、manifest 正确改写。
+
+### 版本号
+
+上游没动的地方升 patch 位，这样下载到的 APK 和"敲不进字"的旧包可以区分：
+
+| 应用 | 版本 |
+|---|---|
+| CADCraft | 0.21.0 |
+| DeckCraft | 0.19.0 |
+| DesignCraft | 0.21.0 |
+| FigCraft | 0.18.1 |
+| GridCraft | 0.19.1 |
+| SoundCraft | 0.20.1 |
+| VectorCraft | 0.24.1 |
+| WordCraft | 0.19.0 |
+| Launcher | 0.19.4 |
+
+### 静态验证（真机断线时做的）
+
+每个新 `libmain.so` 都含补丁里的 `ime text: ` 格式串；**旧的 WordCraft 0.18.1 里这个串出现
+0 次**。这证明代码进了发布的库，不需要截图。
+
+### ⚠️ 仍未做真机验证
+
+设备（PA2573）在这次会话里反复掉线（`10.20.163.34:40281`、`172.19.0.1:45285`、
+`10.20.163.189` 都试过），装机只成功过一次（WordCraft 0.19.0 装上，但随即失联，没能截图）。
+
+同一份修复在 MailCraft 1.0.0 上已完整验证（打字、删除、删后重输），两个 fork 的 Android 后端
+是同一个文件，所以预期很高 —— **但预期不等于观察**，这一条不算已验证。
+
+### 关于"WordCraft 以前正常"
+
+查了 wordcraft 从 v0.11 到 v0.18.1 的 winit：**从 v0.12 开始一直是 `a517b38`，代码从没变过，
+也从来没有 TextEvent 分支**。所以不是我们的代码退化了。更可能是输入法侧变了 —— 以前发带字符的
+KeyEvent（winit 能处理），现在改成通过输入连接 commitText（winit 丢弃）。这一点是推断，无法从
+仓库证实。
