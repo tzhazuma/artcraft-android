@@ -2572,3 +2572,56 @@ ime text: 10 -> 9 chars, delta=Delete(1)
 也从来没有 TextEvent 分支**。所以不是我们的代码退化了。更可能是输入法侧变了 —— 以前发带字符的
 KeyEvent（winit 能处理），现在改成通过输入连接 commitText（winit 丢弃）。这一点是推断，无法从
 仓库证实。
+
+---
+
+## 2026-11-17（续）— 方向键与 SolidCraft
+
+### 方向键：从 IME 的 selection 变化推导
+
+软键盘没有方向键，所以用户移动光标时唯一的证据是：`text` 没变、`selection` 变了。这和当初少处理
+`TextEvent` 是同一类缺陷 —— 没有它，光标能放下但移不动，打错字只能把后面的全删掉。
+
+`ime_delta` 现在同时接收两个缓冲区和两个光标位置，文本不变而光标移动时返回 `MoveCursor(n)`，
+Android 后端把它转成对应次数的方向键按下。
+
+**打字也会移动光标**，所以文本有变化时优先按 Append/Delete 处理，绝不能同时当成方向键 ——
+否则每敲一个字符就会跟一次光标跳跃。这两条各有一个测试。
+
+测试从 5 个增加到 7 个，最关键的是这两个容易混淆的：
+
+- `a_cursor_move_becomes_a_direction`
+- `typing_is_not_also_a_cursor_move`
+
+### SolidCraft 单独处理
+
+它 vendor 的是 winit **0.30.13**（不是 storytold fork），所以除了 `Cargo.toml` 那一处，其余 hunk
+都能干净应用；`tracing` 开 `log` feature 那处需要手工改（0.30.13 把依赖写成
+`[dependencies.tracing]` 表，不是内联表）。`cargo test --lib ime_delta` 在它上面也是 7 passed。
+
+### vendoring 脚本的三个 bug（都会静默跳过刷新）
+
+1. **判断"已是最新"的判据太弱** —— 原来只查 IME 分支，所以一个「有 IME 但没有方向键规则」的
+   副本会报告自己是最新的。现在用 `ime_delta.rs` 里的 `PATCH_REV` 常量作判据，规则变了就 bump。
+2. manifest 已是 `path = "vendor/winit"` 时，第二段检查不认这种写法，直接落到"没有 winit 依赖"。
+3. `set -euo pipefail` 下，manifest 改写后读不到 rev 的 `grep` 会让整个脚本中止。
+
+### 构建与发布
+
+十个应用全部重建，每个打包的 `libmain.so` 里都能找到 `MoveCursor` 符号：
+
+| 应用 | 版本 | 应用 | 版本 |
+|---|---|---|---|
+| CADCraft | 0.21.1 | SoundCraft | 0.20.2 |
+| DeckCraft | 0.19.1 | VectorCraft | 0.24.2 |
+| DesignCraft | 0.21.1 | WordCraft | 0.19.1 |
+| FigCraft | 0.18.2 | **SolidCraft** | **0.42.1** |
+| GridCraft | 0.19.2 | Launcher | 0.19.5 |
+
+### ⚠️ 方向键未做真机验证
+
+设备在本轮构建期间全程离线（`10.20.233.8:43447` 端口关闭、mDNS 无服务），所以没能装机。
+
+可以说的：方向键用的是**和退格完全相同的合成事件形状**（`is_synthetic: false`、`Key::Named`、
+`PhysicalKey::Code`），而退格已经在真机上验证可用；差分规则有 7 个本机测试。**但"方向键真的
+能移动光标"这一条没有观察证据。**
