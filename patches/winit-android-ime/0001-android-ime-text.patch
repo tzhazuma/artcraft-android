@@ -1,6 +1,6 @@
-diff -ruN wbase/Cargo.toml wfinal/Cargo.toml
---- a/Cargo.toml	2026-11-17 13:54:08.199731159 +0800
-+++ b/Cargo.toml	2026-11-17 13:54:16.504313655 +0800
+diff -ruN nb/Cargo.toml nf/Cargo.toml
+--- a/Cargo.toml	2026-11-17 16:29:46.011418716 +0800
++++ b/Cargo.toml	2026-11-17 16:29:47.142981087 +0800
 @@ -98,7 +98,10 @@
  ], optional = true }
  serde = { workspace = true, optional = true }
@@ -13,15 +13,21 @@ diff -ruN wbase/Cargo.toml wfinal/Cargo.toml
  
  [dev-dependencies]
  image = { version = "0.25.0", default-features = false, features = ["png"] }
-diff -ruN wbase/src/ime_delta.rs wfinal/src/ime_delta.rs
+diff -ruN nb/src/ime_delta.rs nf/src/ime_delta.rs
 --- a/src/ime_delta.rs	1970-01-01 08:00:00.000000000 +0800
-+++ b/src/ime_delta.rs	2026-11-17 13:54:16.596435457 +0800
-@@ -0,0 +1,74 @@
++++ b/src/ime_delta.rs	2026-11-17 16:29:48.919716651 +0800
+@@ -0,0 +1,113 @@
 +//! Differencing for Android IME text reports.
 +//!
 +//! `android_activity` reports the whole editing buffer on every change, never the edit, so the
 +//! difference has to be computed before it can be delivered as winit events. This lives outside
 +//! `platform_impl::android` so the rules can be exercised on any host, not only on a device.
++
++/// Bumped whenever these rules change, so `patches/winit-android-ime/setup-winit-ime.sh` can tell a
++/// vendored copy that carries the current rules from one left over from an earlier one. Without a
++/// marker the script only looked for the IME arm, and a tree that had that but not the cursor rules
++/// reported itself as up to date.
++pub(crate) const PATCH_REV: u32 = 2;
 +
 +/// What one `TextEvent` means relative to the text already delivered.
 +///
@@ -31,13 +37,30 @@ diff -ruN wbase/src/ime_delta.rs wfinal/src/ime_delta.rs
 +pub(crate) enum ImeDelta {
 +    Append(String),
 +    Delete(usize),
-+    /// The edit is not expressible as an append or a tail deletion.
++    /// The text did not change, only the cursor did: characters, negative meaning left.
++    MoveCursor(isize),
++    /// The edit is not expressible as an append, a tail deletion or a cursor move.
 +    Replace,
 +}
 +
-+pub(crate) fn ime_delta(previous: &str, current: &str) -> ImeDelta {
++/// Differences a report against what was already delivered.
++///
++/// The cursor matters as much as the text. A soft keyboard has no arrow keys of its own, so when the
++/// user moves the caret the only evidence is `selection` moving in a report whose `text` did not
++/// change — without that comparison the caret can be put down but never moved, which is the same
++/// class of defect as the missing `TextEvent` arm itself.
++pub(crate) fn ime_delta(
++    previous: &str,
++    previous_cursor: usize,
++    current: &str,
++    current_cursor: usize,
++) -> ImeDelta {
 +    if current == previous {
-+        return ImeDelta::Replace;
++        return if current_cursor == previous_cursor {
++            ImeDelta::Replace
++        } else {
++            ImeDelta::MoveCursor(current_cursor as isize - previous_cursor as isize)
++        };
 +    }
 +    if let Some(added) = current.strip_prefix(previous) {
 +        return ImeDelta::Append(added.to_owned());
@@ -48,7 +71,6 @@ diff -ruN wbase/src/ime_delta.rs wfinal/src/ime_delta.rs
 +    ImeDelta::Replace
 +}
 +
-+
 +#[cfg(test)]
 +mod ime_delta_tests {
 +    use super::{ime_delta, ImeDelta};
@@ -57,43 +79,60 @@ diff -ruN wbase/src/ime_delta.rs wfinal/src/ime_delta.rs
 +    /// contains everything typed so far. Only the new tail may be committed.
 +    #[test]
 +    fn typing_commits_only_the_new_tail() {
-+        assert_eq!(ime_delta("", "a"), ImeDelta::Append("a".into()));
-+        assert_eq!(ime_delta("a", "ab"), ImeDelta::Append("b".into()));
-+        assert_eq!(ime_delta("ab", "abc"), ImeDelta::Append("c".into()));
-+        // Without the difference, "abc" would be inserted three times over.
-+        assert_eq!(ime_delta("abc", "abcd"), ImeDelta::Append("d".into()));
++        assert_eq!(ime_delta("", 0, "a", 1), ImeDelta::Append("a".into()));
++        assert_eq!(ime_delta("a", 1, "ab", 2), ImeDelta::Append("b".into()));
++        assert_eq!(ime_delta("ab", 2, "abc", 3), ImeDelta::Append("c".into()));
++        assert_eq!(ime_delta("abc", 3, "abcd", 4), ImeDelta::Append("d".into()));
 +    }
 +
 +    #[test]
 +    fn a_whole_word_arrives_at_once() {
-+        assert_eq!(ime_delta("", "hello"), ImeDelta::Append("hello".into()));
++        assert_eq!(ime_delta("", 0, "hello", 5), ImeDelta::Append("hello".into()));
 +    }
 +
 +    #[test]
 +    fn deleting_the_tail_asks_for_that_many_backspaces() {
-+        assert_eq!(ime_delta("abc", "ab"), ImeDelta::Delete(1));
-+        assert_eq!(ime_delta("abcd", "ab"), ImeDelta::Delete(2));
-+        assert_eq!(ime_delta("abc", ""), ImeDelta::Delete(3));
++        assert_eq!(ime_delta("abc", 3, "ab", 2), ImeDelta::Delete(1));
++        assert_eq!(ime_delta("abcd", 4, "ab", 2), ImeDelta::Delete(2));
++        assert_eq!(ime_delta("abc", 3, "", 0), ImeDelta::Delete(3));
 +    }
 +
 +    /// Counted in characters, not bytes: a deleted emoji is one backspace, not four.
 +    #[test]
 +    fn deletion_counts_characters_not_bytes() {
-+        assert_eq!(ime_delta("a😀", "a"), ImeDelta::Delete(1));
-+        assert_eq!(ime_delta("中文", "中"), ImeDelta::Delete(1));
++        let two = "a\u{1F600}";
++        assert_eq!(ime_delta(two, 2, "a", 1), ImeDelta::Delete(1));
++        assert_eq!(ime_delta("\u{4E2D}\u{6587}", 2, "\u{4E2D}", 1), ImeDelta::Delete(1));
 +    }
 +
 +    /// An edit in the middle cannot be expressed, and guessing would corrupt the field.
 +    #[test]
 +    fn a_replacement_is_left_alone() {
-+        assert_eq!(ime_delta("abc", "axc"), ImeDelta::Replace);
-+        assert_eq!(ime_delta("abc", "abc"), ImeDelta::Replace);
-+        assert_eq!(ime_delta("abc", "xyz"), ImeDelta::Replace);
++        assert_eq!(ime_delta("abc", 3, "axc", 3), ImeDelta::Replace);
++        assert_eq!(ime_delta("abc", 3, "xyz", 3), ImeDelta::Replace);
++    }
++
++    /// A caret move is the only evidence of an arrow key on a soft keyboard: the text is untouched
++    /// and only `selection` moved.
++    #[test]
++    fn a_cursor_move_becomes_a_direction() {
++        assert_eq!(ime_delta("abc", 3, "abc", 2), ImeDelta::MoveCursor(-1));
++        assert_eq!(ime_delta("abc", 1, "abc", 3), ImeDelta::MoveCursor(2));
++        assert_eq!(ime_delta("abc", 0, "abc", 3), ImeDelta::MoveCursor(3));
++        assert_eq!(ime_delta("abc", 2, "abc", 2), ImeDelta::Replace);
++    }
++
++    /// Typing moves the caret too, and that must not also be reported as an arrow press or every
++    /// character typed would be followed by a cursor jump.
++    #[test]
++    fn typing_is_not_also_a_cursor_move() {
++        assert_eq!(ime_delta("ab", 2, "abc", 3), ImeDelta::Append("c".into()));
++        assert_eq!(ime_delta("abc", 3, "ab", 2), ImeDelta::Delete(1));
 +    }
 +}
-diff -ruN wbase/src/lib.rs wfinal/src/lib.rs
---- a/src/lib.rs	2026-11-17 13:54:08.343464935 +0800
-+++ b/src/lib.rs	2026-11-17 13:54:16.628688935 +0800
+diff -ruN nb/src/lib.rs nf/src/lib.rs
+--- a/src/lib.rs	2026-11-17 16:29:46.096741458 +0800
++++ b/src/lib.rs	2026-11-17 16:29:48.928197562 +0800
 @@ -206,6 +206,7 @@
  pub mod error;
  mod cursor;
@@ -102,9 +141,9 @@ diff -ruN wbase/src/lib.rs wfinal/src/lib.rs
  pub mod event_loop;
  mod icon;
  pub mod keyboard;
-diff -ruN wbase/src/platform_impl/android/mod.rs wfinal/src/platform_impl/android/mod.rs
---- a/src/platform_impl/android/mod.rs	2026-11-17 13:54:08.463018290 +0800
-+++ b/src/platform_impl/android/mod.rs	2026-11-17 13:54:16.781270437 +0800
+diff -ruN nb/src/platform_impl/android/mod.rs nf/src/platform_impl/android/mod.rs
+--- a/src/platform_impl/android/mod.rs	2026-11-17 16:29:46.152625116 +0800
++++ b/src/platform_impl/android/mod.rs	2026-11-17 16:29:48.983208716 +0800
 @@ -10,7 +10,7 @@
  use android_activity::{
      AndroidApp, AndroidAppWaker, ConfigurationRef, InputStatus, MainEvent, Rect,
@@ -114,28 +153,32 @@ diff -ruN wbase/src/platform_impl/android/mod.rs wfinal/src/platform_impl/androi
  
  use crate::cursor::Cursor;
  use crate::dpi::{PhysicalPosition, PhysicalSize, Position, Size};
-@@ -143,8 +143,12 @@
+@@ -143,8 +143,15 @@
      cause: StartCause,
      ignore_volume_keys: bool,
      combining_accent: Option<char>,
 +    /// MailCraft: the text the IME last reported, so `TextEvent` can be turned into a delta.
 +    /// `android_activity` delivers the *whole* editing buffer every time, not what changed.
 +    ime_text_seen: String,
++    /// Caret position the IME last reported, in characters. A change with the text unchanged is the
++    /// only evidence a soft keyboard gives of an arrow key.
++    ime_cursor_seen: usize,
  }
  
 +
  #[derive(Debug, Clone, PartialEq)]
  pub(crate) struct PlatformSpecificEventLoopAttributes {
      pub(crate) android_app: Option<AndroidApp>,
-@@ -192,6 +196,7 @@
+@@ -192,6 +199,8 @@
              cause: StartCause::Init,
              ignore_volume_keys: attributes.ignore_volume_keys,
              combining_accent: None,
 +            ime_text_seen: String::new(),
++            ime_cursor_seen: 0,
          })
      }
  
-@@ -473,6 +478,115 @@
+@@ -473,6 +482,169 @@
                      },
                  }
              },
@@ -150,7 +193,18 @@ diff -ruN wbase/src/platform_impl/android/mod.rs wfinal/src/platform_impl/androi
 +                // GameActivity reports the whole editing buffer on every change, not the edit itself,
 +                // so it has to be differenced before it can be delivered as events.
 +                let window_id = window::WindowId(WindowId);
-+                let delta = crate::ime_delta::ime_delta(&self.ime_text_seen, &state.text);
++                // `selection.start` is a byte offset in the IME's own buffer; the tests and the
++                // cursor bookkeeping count characters, so convert before comparing.
++                let cursor = state.text
++                    .get(..state.selection.start.min(state.text.len()))
++                    .map(|prefix| prefix.chars().count())
++                    .unwrap_or(self.ime_cursor_seen);
++                let delta = crate::ime_delta::ime_delta(
++                    &self.ime_text_seen,
++                    self.ime_cursor_seen,
++                    &state.text,
++                    cursor,
++                );
 +                // Info, not Debug: this port's logger is capped at Info, and this line is the only
 +                // way to see what the IME actually reports on a device. It fires once per real
 +                // change, so it stays quiet while the user reads. `compose` matters because a CJK
@@ -166,7 +220,7 @@ diff -ruN wbase/src/platform_impl/android/mod.rs wfinal/src/platform_impl/androi
 +                        state.compose_region,
 +                    );
 +                }
-+                match delta {
++                match &delta {
 +                    crate::ime_delta::ImeDelta::Append(added) => {
 +                        // winit's IME contract is that a commit is preceded by an empty preedit,
 +                        // which clears any composing underline left by the previous event.
@@ -183,7 +237,7 @@ diff -ruN wbase/src/platform_impl/android/mod.rs wfinal/src/platform_impl/androi
 +                        callback(
 +                            event::Event::WindowEvent {
 +                                window_id,
-+                                event: event::WindowEvent::Ime(event::Ime::Commit(added)),
++                                event: event::WindowEvent::Ime(event::Ime::Commit(added.clone())),
 +                            },
 +                            self.window_target(),
 +                        );
@@ -192,7 +246,7 @@ diff -ruN wbase/src/platform_impl/android/mod.rs wfinal/src/platform_impl/androi
 +                    // egui only removes text on a Backspace key press, so one is synthesised per
 +                    // removed character -- without this a typo can be typed but never corrected.
 +                    crate::ime_delta::ImeDelta::Delete(count) => {
-+                        for _ in 0..count {
++                        for _ in 0..*count {
 +                            callback(
 +                                event::Event::WindowEvent {
 +                                    window_id,
@@ -229,6 +283,8 @@ diff -ruN wbase/src/platform_impl/android/mod.rs wfinal/src/platform_impl/androi
 +                    // A replacement in the middle cannot be expressed as an append or a deletion;
 +                    // saying nothing keeps the field intact and lets the next edit resynchronise.
 +                    crate::ime_delta::ImeDelta::Replace => {},
++                    // Handled below, after the text bookkeeping, so the two cannot interleave.
++                    crate::ime_delta::ImeDelta::MoveCursor(_) => {},
 +                }
 +                if let Some(region) = state.compose_region {
 +                    // Keep the composing underline in step with the IME's own idea of it; the text
@@ -246,12 +302,53 @@ diff -ruN wbase/src/platform_impl/android/mod.rs wfinal/src/platform_impl/androi
 +                        self.window_target(),
 +                    );
 +                }
++                match &delta {
++                    // A caret move with the text untouched is the IME reporting an arrow key. One
++                    // key press per character moved keeps egui's own selection logic in charge of
++                    // what a move means in its buffer.
++                    crate::ime_delta::ImeDelta::MoveCursor(n) => {
++                        let n = *n;
++                        let (key, count) = if n < 0 {
++                            (crate::keyboard::NamedKey::ArrowLeft, (-n) as usize)
++                        } else {
++                            (crate::keyboard::NamedKey::ArrowRight, n as usize)
++                        };
++                        let code = if n < 0 {
++                            crate::keyboard::KeyCode::ArrowLeft
++                        } else {
++                            crate::keyboard::KeyCode::ArrowRight
++                        };
++                        for _ in 0..count {
++                            callback(
++                                event::Event::WindowEvent {
++                                    window_id,
++                                    event: event::WindowEvent::KeyboardInput {
++                                        device_id: event::DeviceId(DeviceId(0)),
++                                        event: event::KeyEvent {
++                                            state: event::ElementState::Pressed,
++                                            logical_key: crate::keyboard::Key::Named(key),
++                                            physical_key: crate::keyboard::PhysicalKey::Code(code),
++                                            location: crate::keyboard::KeyLocation::Standard,
++                                            repeat: false,
++                                            text: None,
++                                            platform_specific: KeyEventExtra {},
++                                        },
++                                        is_synthetic: false,
++                                    },
++                                },
++                                self.window_target(),
++                            );
++                        }
++                    },
++                    _ => {},
++                }
 +                self.ime_text_seen = state.text.clone();
++                self.ime_cursor_seen = cursor;
 +            },
              _ => {
                  warn!("Unknown android_activity input event {event:?}")
              },
-@@ -1144,3 +1258,4 @@
+@@ -1144,3 +1316,4 @@
          self.monitor.clone()
      }
  }
