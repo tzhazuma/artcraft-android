@@ -2625,3 +2625,58 @@ Android 后端把它转成对应次数的方向键按下。
 可以说的：方向键用的是**和退格完全相同的合成事件形状**（`is_synthetic: false`、`Key::Named`、
 `PhysicalKey::Code`），而退格已经在真机上验证可用；差分规则有 7 个本机测试。**但"方向键真的
 能移动光标"这一条没有观察证据。**
+
+---
+
+## 2026-11-18 — 真机验证结果（PA2573，`192.168.0.107:41339`）
+
+### ✅ 方向键已验证
+
+WordCraft 0.19.1，文档内容 `helloxyzAB` 时光标在末尾；按两次 DPAD_LEFT 后输入 `Z`，
+结果显示 **`helloZxyzAB`** —— `Z` 落在字符串中间而不是末尾，光标确实移动了。
+
+### ✅ 打字回归通过
+
+WordCraft 0.19.1：`hello` → `xyz`，两次都精确写入，logcat 同步确认：
+
+```
+ime text: 0 -> 5 chars, delta=Append("hello")
+ime text: 5 -> 8 chars, delta=Append("xyz")
+```
+
+### 🩺 一个影响所有验证方法的发现
+
+这台设备当前的输入法是 Google 中文输入法，`adb shell input text` 打进去的字会**留在组合状态**，
+不按 Enter 或点候选词就不提交给应用。第一次看到"打字无反应"时我一度以为是方向键改动引入的回归，
+装了旧的 0.19.0 对比才发现**两个版本都没有事件** —— 是验证方法的问题，不是代码的问题。
+
+后续真机验证必须：`input text` 之后补一次 `KEYCODE_ENTER`，或点候选词。
+
+### ❌ SolidCraft 的文本输入仍然不工作，且原因不是缺失的那个分支
+
+结论先说：**不是我修的那个缺陷**。证据如下：
+
+| 检查项 | SolidCraft 0.42.1 | WordCraft 0.19.1（对照，正常） |
+|---|---|---|
+| vendor 里有 `InputEvent::TextEvent` | 有 | 有 |
+| `ime_delta` / `MoveCursor` | 有 | 有 |
+| 打包的 `libmain.so` 含 `ime text:` | 有 | 有 |
+| 输入法连接 | `gametextinput.InputConnection` | `gametextinput.InputConnection` |
+| `mInputShown` | true | true |
+| android-activity | 0.6.1 | 0.6.1 |
+| egui-winit | 0.37.0 | 0.37.0 |
+| 两个 winit 后端的差异 | 只差 5 行 `reset_ime` 桩 | 同 |
+| 搜索框实现 | 真的 `egui::TextEdit`（`ui-kit/src/search.rs:160`） | — |
+| **logcat 里的 `ime text:`** | **一条都没有** | 每条都有 |
+
+也就是说：输入法起来了、连接是 GameActivity 的真实连接、搜索框是真的 TextEdit，但
+`InputEvent::TextEvent` **从来没有到达 winit**。点击候选词提交也没用。
+
+可能的下一步（还没做）：
+1. 给 SolidCraft 的 TextEvent 分支加一条**无条件**日志（现在只在文本变化时打印），确认是不是
+   事件到了但文本没变；
+2. 它的 `apps/solidcraft-android/Cargo.toml` 里 `winit = { version = "0.30", default-features = false }`
+   没显式开 `android-game-activity`，依赖 eframe 透传。可以试试显式加上；
+3. 对比两个 GameActivity Java shell 的差异。
+
+**SolidCraft 还谈不上"修好了" —— 它现在能启动、能建模，但打不了字。**
