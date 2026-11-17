@@ -2541,13 +2541,30 @@ workspace manifest 改成 path 依赖。总共 **20 KB**，替代了九份 4.1 M
 每个新 `libmain.so` 都含补丁里的 `ime text: ` 格式串；**旧的 WordCraft 0.18.1 里这个串出现
 0 次**。这证明代码进了发布的库，不需要截图。
 
-### ⚠️ 仍未做真机验证
+### ✅ 真机验证（2026-11-17，PA2573，`10.20.233.8:43447`）
 
-设备（PA2573）在这次会话里反复掉线（`10.20.163.34:40281`、`172.19.0.1:45285`、
-`10.20.163.189` 都试过），装机只成功过一次（WordCraft 0.19.0 装上，但随即失联，没能截图）。
+设备回来之后九个应用全部装机，版本逐个核对通过。两个应用做了输入验证：
 
-同一份修复在 MailCraft 1.0.0 上已完整验证（打字、删除、删后重输），两个 fork 的 Android 后端
-是同一个文件，所以预期很高 —— **但预期不等于观察**，这一条不算已验证。
+**WordCraft 0.19.0** —— 最完整的验证，因为它就是用户点名说"以前能用现在不行"的那个：
+
+| 操作 | 文档内容 |
+|---|---|
+| 输入 `hello` | `hello` |
+| 输入 `abcdef`，三次退格 | `helloabc` |
+
+logcat 同 MailCraft 一致，还暴露了整词提交：
+
+```
+ime text: 5 -> 6 chars,  delta=Append("a")
+ime text: 7 -> 11 chars, delta=Append("cdef")
+ime text: 11 -> 10 chars, delta=Delete(1)
+ime text: 10 -> 9 chars, delta=Delete(1)
+```
+
+**CADCraft 0.21.0** —— 底部命令行输入 `line`，显示为 `>_ line`。
+
+其余七个（DeckCraft / DesignCraft / FigCraft / GridCraft / SoundCraft / VectorCraft / Launcher）
+版本已核验，输入未逐个点进去测 —— 它们用的是同一份补丁、同一份 winit 源码。
 
 ### 关于"WordCraft 以前正常"
 
