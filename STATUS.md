@@ -2696,3 +2696,56 @@ ime text: 5 -> 8 chars, delta=Append("xyz")
    但 SolidCraft 的 `info!` 就是不出来 —— 原因还没查清，但**它不是功能问题**。
 
 教训：**不能把"日志里没有"当作"运行时没有"**，尤其当日志级别和转发链路都没验证过的时候。
+
+---
+
+## 2026-11-20 — MailCraft 改用上游官方 Android 应用（方案 A）
+
+### 决定
+
+0.13.0 起上游**自己做了原生 Android 应用**（Kotlin + Compose，193 个 .kt 文件），我们那个 egui
+外壳 port 已经没有维护价值。改为直接构建他们的工程。
+
+### 踩到的六个坑（每个都会让构建失败）
+
+| # | 现象 | 原因与处理 |
+|---|---|---|
+| 1 | `Dependency requires at least JVM runtime version 21` | paparazzi 插件要 JVM 21，不是 CI 写的 17 → 用 `openjdk@21` |
+| 2 | `SDK location not found` | 缺 `local.properties` → 写 `sdk.dir` |
+| 3 | `failed to load source for dependency winit` | 本机默认 rustc 1.91，仓库要 1.95 → `RUSTUP_TOOLCHAIN=1.99.1` |
+| 4 | `can't find crate for core` | 只装了 arm64 target，Gradle 同时要 x86_64 → 两个都装 |
+| 5 | `could not GET raw.githubusercontent.com/...rustls-platform-verifier` | 这台机器 **github.com 不可达**（api.github.com 正常）→ 走 `ghfast.top` 镜像 |
+| 6 | `Dependency verification failed: aapt2-...-osx.jar` | 他们的 `verification-metadata.xml` 只记了 Linux 的 aapt2（CI 跑 Linux）→ `--dependency-verification=off` |
+
+网络这条值得记：`github.com` 返回 000 而 `api.github.com` 返回 200，所以 `gh release` 能用但
+`git clone/fetch` 全部失败。用 `git config url."https://ghfast.top/https://github.com/".insteadOf`
+和一处 `settings.gradle.kts` 的 Maven 仓库改写绕过去。
+
+### 产物
+
+- **MailCraft 0.13.0**，`work.mailcraft.android`，67 MB，已签名（证书 `9c0dbe75…`，与其它应用一致）
+- **启动器 0.19.6**，接入新包名
+
+启动器改动的四个位置（少一处就检测不到）：
+
+1. `MainActivity.java` 探测数组加 `work.mailcraft.android`
+2. **同文件的过滤器** —— 原本硬编码 `startsWith("ai.storyteller.")`，改成允许这个显式白名单
+3. `AndroidManifest.xml` 的 `<queries>`
+4. `catalog.toml` 的 `former_bundles` + `catalog.rs` 的映射（两个 id 都保留，旧 egui 包也认得）
+
+### 可复现脚本
+
+`dist-repos/mailcraft-android/scripts/build-upstream-android.sh` —— 把上面六个坑全部固化，
+一条命令从源码到签名 APK。
+
+### ⚠️ Install pending
+
+设备全程离线（`192.168.0.107:41339` 端口关闭、mDNS 无服务），两个包都**没有装机验证**：
+
+```
+mailcraft         0.13.0  out/MailCraft-0.13.0-android-arm64.apk          2026-11-20
+artcraftlauncher  0.19.6  out/ArtCraftLauncher-0.19.6-android-arm64.apk   2026-11-20
+```
+
+上游这个应用没在我们设备上跑过，所以**功能、中文显示、启动器识别都未验证**。装好后要确认：
+应用能启动、能收发邮件、启动器「我的应用」里能看到 MailCraft 且能点开。
