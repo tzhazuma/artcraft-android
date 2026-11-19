@@ -10,6 +10,7 @@
 set -u
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 moved=0
+unreadable=0
 
 read_version() {   # $1 = directory
   awk '
@@ -32,6 +33,24 @@ for dir in "$ROOT"/src/*/; do
 
   local_ver="$(read_version "$dir")"
   git -C "$dir" fetch -q origin 2>/dev/null || true
+
+  # An unreadable remote must not be reported as a version move. MailCraft's clone sat on a detached
+  # HEAD with no `origin/main` ref for at least two runs; the empty string compared unequal to the
+  # local version, so it printed `0.9.0 -> ` and -- because the target was blank -- looked like
+  # nothing had changed. It had gone 0.9.0 -> 0.13.0, four minor releases, unnoticed.
+  if ! git -C "$dir" rev-parse --verify -q origin/main >/dev/null 2>&1; then
+    for ref in origin/master origin/HEAD; do
+      if git -C "$dir" rev-parse --verify -q "$ref" >/dev/null 2>&1; then
+        git -C "$dir" update-ref refs/remotes/origin/main "$ref" 2>/dev/null && break
+      fi
+    done
+  fi
+  if ! git -C "$dir" rev-parse --verify -q origin/main >/dev/null 2>&1; then
+    printf '%-14s %s -> (UNREADABLE: no origin/main; check network or refs)\n' "$app" "$local_ver"
+    unreadable=1
+    continue
+  fi
+
   remote_ver="$(git -C "$dir" show origin/main:Cargo.toml 2>/dev/null | awk '
     /^\[workspace\.package\]/ {ws=1; next}
     /^\[package\]/            {ws=1; next}
@@ -41,6 +60,11 @@ for dir in "$ROOT"/src/*/; do
     }')"
 
   [ -z "$local_ver" ] && continue
+  if [ -z "$remote_ver" ]; then
+    printf '%-14s %s -> (UNREADABLE: no version field at origin/main)\n' "$app" "$local_ver"
+    unreadable=1
+    continue
+  fi
   if [ "$local_ver" != "$remote_ver" ]; then
     behind="$(git -C "$dir" rev-list --count HEAD..origin/main 2>/dev/null || echo '?')"
     # A release candidate is not the same event as a release: it is published, but shipping it
@@ -55,5 +79,7 @@ for dir in "$ROOT"/src/*/; do
   fi
 done
 
+# Unreadable is a different outcome from "nothing moved" and must not be mistaken for it.
+[ "$unreadable" = 1 ] && { echo ";" ; echo "NOTE: at least one app could not be compared (see UNREADABLE above)." >&2; exit 11; }
 [ "$moved" = 1 ] && exit 10
 exit 0
