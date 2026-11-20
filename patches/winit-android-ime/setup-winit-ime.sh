@@ -24,6 +24,38 @@ MANIFEST="$CLONE/Cargo.toml"
 [ -f "$MANIFEST" ] || { echo "FAIL: missing $MANIFEST"; exit 2; }
 
 # Already wired to the vendored copy? Then only refresh the tree.
+# Upstream may vendor winit itself -- SolidCraft 0.45.0 does -- and then the tree is a tracked part
+# of their repository, not something this script put there. Overwriting it from a cargo checkout
+# would silently discard whatever else they vendored alongside, so patch it where it sits instead.
+if grep -q '^winit = { path = "vendor/winit" }' "$MANIFEST" && git -C "$CLONE" ls-files --error-unmatch vendor/winit/Cargo.toml >/dev/null 2>&1; then
+  if grep -q "PATCH_REV: u32 = 2" "$VENDOR/src/ime_delta.rs" 2>/dev/null; then
+    echo "setup-winit-ime: upstream's own vendor already carries the patch"
+    exit 0
+  fi
+  if ! grep -q "InputEvent::TextEvent" "$VENDOR/src/platform_impl/android/mod.rs" 2>/dev/null; then
+    patch -p1 -d "$VENDOR" --forward --silent < "$PATCH_FILE" 2>/dev/null || true
+    # The Cargo.toml hunk conflicts across winit versions; add the feature directly instead.
+    if ! grep -q 'features = \["log"\]' "$VENDOR/Cargo.toml" 2>/dev/null; then
+      /usr/bin/python3 - "$VENDOR/Cargo.toml" <<'PYEOF'
+import pathlib, re, sys
+p = pathlib.Path(sys.argv[1]); s = p.read_text(encoding="utf-8")
+m = re.search(r'^\[dependencies\.tracing\]\n(?:[^\[].*\n)*', s, re.M)
+if m:
+    block = m.group(0).rstrip("\n") + '\nfeatures = ["log"]\n'
+    s = s[:m.start()] + block + s[m.end():]
+elif re.search(r'^tracing = \{[^}]*\}', s, re.M):
+    s = re.sub(r'^(tracing = \{[^}]*)\}', r'\1, features = ["log"] }', s, count=1, flags=re.M)
+p.write_text(s, encoding="utf-8")
+PYEOF
+    fi
+  fi
+  find "$VENDOR" \( -name "*.orig" -o -name "*.rej" \) -delete 2>/dev/null
+  grep -q "InputEvent::TextEvent" "$VENDOR/src/platform_impl/android/mod.rs" 2>/dev/null \
+    || { echo "FAIL: IME patch did not apply to upstream's vendor"; exit 2; }
+  echo "setup-winit-ime: patched upstream's own vendor in place"
+  exit 0
+fi
+
 ALREADY_WIRED=0
 if grep -q '^winit = { path = "vendor/winit" }' "$MANIFEST"; then
   ALREADY_WIRED=1

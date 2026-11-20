@@ -2749,3 +2749,38 @@ artcraftlauncher  0.19.6  out/ArtCraftLauncher-0.19.6-android-arm64.apk   2026-1
 
 上游这个应用没在我们设备上跑过，所以**功能、中文显示、启动器识别都未验证**。装好后要确认：
 应用能启动、能收发邮件、启动器「我的应用」里能看到 MailCraft 且能点开。
+
+---
+
+## 2026-11-21 — SolidCraft 0.45.0（首个正式版），以及 winit vendoring 的新情况
+
+### SolidCraft 0.42.0 → 0.45.0 同步完成
+
+这是 SolidCraft 结束 nightly/RC 之后**第一个正式版本**（此前的 0.45.0-rc.x 都按策略跳过）。
+
+上游这次改动里有个需要注意的地方：**他们自己开始 vendor winit 了**（`winit = { path = "vendor/winit" }`，
+`vendor/winit` 是他们仓库里被跟踪的内容）。这打破了我原先的接入脚本假设 —— 脚本会把 cargo 缓存
+里的 winit 拷进去覆盖，等于丢掉他们 vendor 的其它东西。
+
+已改成两条路径：
+
+- **上游自己 vendor 的情况**（SolidCraft 0.45.0+）：在它原地打补丁，不覆盖目录
+- **我们自己 vendor 的情况**（其余九个应用）：维持原行为，从 cargo 缓存取一份再打补丁
+
+冷路径验证过：从 `git archive HEAD vendor/winit` 取出干净副本打补丁，代码 hunk 全部应用，
+只有 `Cargo.toml` 那处冲突（由脚本的 fallback 补 `features = ["log"]`）。`cargo test --lib ime_delta`
+在新 vendor 上仍是 **7 passed**。
+
+产物：`SolidCraft-0.45.0-android-arm64.apk`，`ai.storyteller.solidcraft`，含 `MoveCursor`，已签名。
+
+### ⚠️ Install pending（累计）
+
+设备持续离线，以下三个包**都没有装机验证**：
+
+| 应用 | 版本 | APK | 日期 |
+|---|---|---|---|
+| mailcraft | 0.13.0 | out/MailCraft-0.13.0-android-arm64.apk | 2026-11-20 |
+| artcraftlauncher | 0.19.6 | out/ArtCraftLauncher-0.19.6-android-arm64.apk | 2026-11-20 |
+| solidcraft | 0.45.0 | out/SolidCraft-0.45.0-android-arm64.apk | 2026-11-21 |
+
+MailCraft 那次是**换成上游原生应用**的第一次构建，风险最高：启动器识别、邮件收发、中文显示都未验证。
