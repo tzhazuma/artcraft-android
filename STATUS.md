@@ -2784,3 +2784,35 @@ artcraftlauncher  0.19.6  out/ArtCraftLauncher-0.19.6-android-arm64.apk   2026-1
 | solidcraft | 0.45.0 | out/SolidCraft-0.45.0-android-arm64.apk | 2026-11-21 |
 
 MailCraft 那次是**换成上游原生应用**的第一次构建，风险最高：启动器识别、邮件收发、中文显示都未验证。
+
+---
+
+## 2026-11-21 — 三个待装包全部装机验证完成
+
+设备回来（`10.20.97.144:34111`）后把积压的三个包装上并验证：
+
+### ✅ MailCraft 0.13.0（上游原生应用）
+
+- 启动正常：Compose 界面，左侧 Today / Mail / Calendar / People / Tasks，显示「No account yet，
+  添加 Microsoft 账户」
+- 图标：上游原版**没有声明 android:icon**（`icon=''`），桌面显示空白页。已补上本套件从 0.9.0
+  起就用的图标（含 adaptive 变体），现在桌面显示正常的红色邮件图标
+- 启动器：搜索「mail」能列出 **MailCraft v0.13.0**，带图标和「打开」按钮，点击成功拉起
+  `work.mailcraft.android/.MainActivity`
+
+### ✅ 启动器 0.19.6
+
+`installed-apps.txt` 里同时探到 `work.mailcraft.android 0.13.0`，头部的四项接线（探测数组、
+过滤器白名单、manifest queries、catalog）全部生效。
+
+### ✅ SolidCraft 0.45.0
+
+启动正常（标题栏显示 v0.45.0），命令搜索框输入 `fillet` → 「COMMANDS 4」，首项
+Fillet / MODEL > MODIFY —— IME 补丁在上游自己 vendor 的 winit 上同样生效。
+
+### ✅ 旧版 MailCraft 已卸载
+
+`ai.storyteller.mailcraft`（我们的 egui 版 1.0.0）已 uninstall。桌面上不再有两个同名图标，
+`pm list packages` 只剩 `work.mailcraft.android`。
+
+**install-pending 清空。**
